@@ -1,6 +1,6 @@
 # Jack of my trade
 
-Automation and visualization tool for Google benchmark.
+Visualization tool for Google benchmark.
 
 Built upon Qt5 *Charts* and *DataVisualization* modules.
 
@@ -13,7 +13,6 @@ Built upon Qt5 *Charts* and *DataVisualization* modules.
 
 ### Features
 
-- Only visualization part is currently available
 - Parse Google benchmark results as json files
 - Support old naming format and aggregate data (min, median, mean)
 - Multiple 2D and 3D chart types
