@@ -1,8 +1,8 @@
 # Jack of my trade
 
-Visualization tool for Google benchmark.
+Visualization tool for Google benchmark results.
 
-Built upon Qt5 *Charts* and *DataVisualization* modules.
+Built upon Qt5 Charts and DataVisualization modules.
 
 ![Screenshot_00](docs/screenshots/00.png)
 ![Screenshot_01](docs/screenshots/01.png)
@@ -40,6 +40,10 @@ Options:
 Arguments:
   file                             Benchmark results file in json to parse.
 ```
+
+### Building
+
+The easiest way is to open the project `CMakeLists.txt` with Qt Creator.
 
 ### License
 
