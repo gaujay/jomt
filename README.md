@@ -1,4 +1,5 @@
-# Jack of my trade
+
+# JOMT
 
 Visualization tool for Google benchmark results.
 
@@ -14,10 +15,11 @@ Built upon Qt5 Charts and DataVisualization modules.
 ### Features
 
 - Parse Google benchmark results as json files
-- Support old naming format and aggregate data (min, median, mean)
+- Support old naming format and aggregate data (min, median, mean, stddev/cv)
 - Multiple 2D and 3D chart types
 - Benchmarks and axes selection
-- Plotting options (theme, ranges, logarithm, ...)
+- Plotting options (theme, ranges, logarithm, labels, units, ...)
+- Auto-reload and preferences saving
 
 ### Command line
 
@@ -43,7 +45,18 @@ Arguments:
 
 ### Building
 
-The easiest way is to open the project `CMakeLists.txt` with Qt Creator.
+Supports GCC/MinGW and MSVC builds through CMake.
+
+You may need to install Qt dev libraries, if not already available.
+See : https://doc.qt.io/qt-5/gettingstarted.html#installing-qt
+
+Then just open 'CMakeLists.txt' with a compatible IDE (like QtCreator) or use command line:
+
+    $ cd jomt
+    $ mkdir build
+    $ cd build
+    $ cmake ..
+    $ make <target> -j
 
 ### License
 

@@ -19,9 +19,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <QDebug>
 
 #define PARSE_DEBUG false
+#if PARSE_DEBUG
+  #include <QDebug>
+#endif
 
 
 // Find benchmark index by name
@@ -34,23 +36,51 @@ static int findExistingBenchmark(const BenchResults &bchResults, const QString &
     return idx;
 }
 
+// Remove aggregate suffix if any
+static void cleanupName(BenchData &bchData)
+{
+    QString aggSuffix = "/repeats:";
+    int lastIdx = bchData.run_name.lastIndexOf(aggSuffix);
+    if (lastIdx > 0)
+    {
+        if (bchData.repetitions <= 0)
+        {
+            bool ok = false;
+            int repetitions = bchData.run_name.midRef(lastIdx + aggSuffix.size()).toInt(&ok);
+            if (ok)
+                bchData.repetitions = repetitions;
+        }
+        bchData.run_name.truncate(lastIdx);
+        bchData.name = bchData.run_name;
+    }
+}
+
 
 // Parse benchmark results from json file
-BenchResults ResultParser::parseJsonFile(const QString &filename)
+BenchResults ResultParser::parseJsonFile(const QString &filename, QString& errorMsg)
 {
     BenchResults bchResults;
     
     // Read file
     QFile benchFile(filename);
     if ( !benchFile.open(QIODevice::ReadOnly) ) {
-        qWarning() << "Couldn't open benchmark results file:" << filename;
+        errorMsg = "Couldn't open benchmark results file.";
         return bchResults;
     }
     QByteArray benchData = benchFile.readAll();
+    benchFile.close();
     
     // Get Json main object
     QJsonDocument benchDoc( QJsonDocument::fromJson(benchData) );
+    if (!benchDoc.isObject()) {
+        errorMsg = "Not a json benchmark results file.";
+        return bchResults;
+    }
     QJsonObject benchObj = benchDoc.object();
+    if (benchObj.isEmpty()) {
+        errorMsg = "Empty json benchmark results file.";
+        return bchResults;
+    }
     
     
     /*
@@ -192,6 +222,7 @@ BenchResults ResultParser::parseJsonFile(const QString &filename)
                 bchData.run_name = bchData.name;
                 if (PARSE_DEBUG) qDebug() << "-> name as run_name:" << bchData.run_name;
             }
+            cleanupName(bchData);
             // Run type
             if (bchObj.contains("run_type") && bchObj["run_type"].isString())
             {
@@ -246,8 +277,22 @@ BenchResults ResultParser::parseJsonFile(const QString &filename)
             }
             // Time normalization (us)
             double timeFactor = 1.;
-            if      (bchData.time_unit == "ns") timeFactor = 0.001;
-            else if (bchData.time_unit == "ms") timeFactor = 1000.;
+            if (bchData.time_unit == "ns")
+            {
+                timeFactor = 0.001;
+                if (bchResults.meta.time_unit.isEmpty())     bchResults.meta.time_unit = "ns";
+                else if (bchResults.meta.time_unit != "ns")  bchResults.meta.time_unit = "us";
+            }
+            else if (bchData.time_unit == "ms")
+            {
+                timeFactor = 1000.;
+                if (bchResults.meta.time_unit.isEmpty())     bchResults.meta.time_unit = "ms";
+                else if (bchResults.meta.time_unit != "ms")  bchResults.meta.time_unit = "us";
+                
+            }
+            else {
+                bchResults.meta.time_unit = "us";
+            }
             bchData.real_time_us = bchData.real_time.back() * timeFactor;
             bchData.cpu_time_us  = bchData.cpu_time.back()  * timeFactor;
             
@@ -270,163 +315,234 @@ BenchResults ResultParser::parseJsonFile(const QString &filename)
             
             
             /*
-             * Aggregate type
+             * Existing benchmark
              */
-            if (bchData.run_type == "aggregate")
-            {
-                // Find associated benchmark
-                int idx = findExistingBenchmark(bchResults, bchData.run_name);
-                if (idx < 0) {
-                    qCritical() << "Results parsing: aggregate without associated benchmark data ->" << bchData.name;
-                    continue;
-                }
-                // Existing benchmark data
-                BenchData &exBchData = bchResults.benchmarks[idx];
-                
-                // Name
-                QString aggregate_name;
-                if (bchObj.contains("aggregate_name") && bchObj["aggregate_name"].isString())
-                {
-                    aggregate_name = bchObj["aggregate_name"].toString();
-                    if (PARSE_DEBUG) qDebug() << "-> aggregate_name:" << aggregate_name;
-                }
-                else {
-                    qCritical() << "Results parsing: missing benchmark field 'aggregate_name'";
-                    continue;
-                }
-                // Type
-                if (aggregate_name == "mean") {
-                    exBchData.mean_cpu   = bchData.cpu_time_us;
-                    exBchData.mean_real  = bchData.real_time_us;
-                    if ( !bchData.kbytes_sec.isEmpty() )
-                        exBchData.mean_kbytes = bchData.kbytes_sec_dflt;
-                    if ( !bchData.kitems_sec.isEmpty() )
-                        exBchData.mean_kitems = bchData.kitems_sec_dflt;
-                }
-                else if (aggregate_name == "median") {
-                    exBchData.median_cpu   = bchData.cpu_time_us;
-                    exBchData.median_real  = bchData.real_time_us;
-                    if ( !bchData.kbytes_sec.isEmpty() )
-                        exBchData.median_kbytes = bchData.kbytes_sec_dflt;
-                    if ( !bchData.kitems_sec.isEmpty() )
-                        exBchData.median_kitems = bchData.kitems_sec_dflt;
-                }
-                else if (aggregate_name == "stddev") {
-                    exBchData.stddev_cpu   = bchData.cpu_time_us;
-                    exBchData.stddev_real  = bchData.real_time_us;
-                    if ( !bchData.kbytes_sec.isEmpty() )
-                        exBchData.stddev_kbytes = bchData.kbytes_sec_dflt;
-                    if ( !bchData.kitems_sec.isEmpty() )
-                        exBchData.stddev_kitems = bchData.kitems_sec_dflt;
-                }
-                else {
-                    qCritical() << "Results parsing: unknown benchmark value for 'aggregate_name' ->" << aggregate_name;
-                    continue;
-                }
-                
-                // New  aggregate line
-                if (PARSE_DEBUG) qDebug() << "||";
-                
-                // Update successful
-                continue;
-            }
-            
-            
-            /*
-             * Iteration type
-             */
-            //
-            // Existing benchmark
             int idx = findExistingBenchmark(bchResults, bchData.run_name);
             if (idx >= 0)
             {
-                // Existing benchmark data
                 BenchData &exBchData = bchResults.benchmarks[idx];
-                if (PARSE_DEBUG) qDebug() << "-> append iteration:" << exBchData.name;
                 
-                // Append data
-                exBchData.cpu_time.append(  bchData.cpu_time.back()  );
-                if (exBchData.cpu_time_us > bchData.cpu_time_us)    //min
-                    exBchData.cpu_time_us = bchData.cpu_time_us;
-                
-                exBchData.real_time.append( bchData.real_time.back() );
-                if (exBchData.real_time_us > bchData.real_time_us)  //min
-                    exBchData.real_time_us = bchData.real_time_us;
-                
-                if ( !bchData.kbytes_sec.isEmpty() ) {
-                    exBchData.kbytes_sec.append( bchData.kbytes_sec_dflt );
-                    if (exBchData.kbytes_sec_dflt > bchData.kbytes_sec_dflt)
-                        exBchData.kbytes_sec_dflt = bchData.kbytes_sec_dflt;
-                }
-                if ( !bchData.kitems_sec.isEmpty() ) {
-                    exBchData.kitems_sec.append( bchData.kitems_sec_dflt );
-                    if (exBchData.kitems_sec_dflt > bchData.kitems_sec_dflt)
-                        exBchData.kitems_sec_dflt = bchData.kitems_sec_dflt;
-                }
-                
-                // Min/Max
-                if (!exBchData.hasAggregate) //First -> init
+                /*
+                 * Aggregate type
+                 */
+                if (bchData.run_type == "aggregate")
                 {
-                    exBchData.min_cpu  = std::min(exBchData.cpu_time_us, bchData.cpu_time_us);
-                    exBchData.max_cpu  = std::max(exBchData.cpu_time_us, bchData.cpu_time_us);
-
-                    exBchData.min_real = std::min(exBchData.real_time_us, bchData.real_time_us);
-                    exBchData.max_real = std::max(exBchData.real_time_us, bchData.real_time_us);
+                    if (PARSE_DEBUG) qDebug() << "-> append aggregate:" << exBchData.name;
                     
-                    if ( !bchData.kbytes_sec.isEmpty() ) {
-                        exBchData.min_kbytes = std::min(exBchData.kbytes_sec_dflt, bchData.kbytes_sec_dflt);
-                        exBchData.max_kbytes = std::max(exBchData.kbytes_sec_dflt, bchData.kbytes_sec_dflt);
+                    // Name
+                    QString aggregate_name;
+                    if (bchObj.contains("aggregate_name") && bchObj["aggregate_name"].isString())
+                    {
+                        aggregate_name = bchObj["aggregate_name"].toString();
+                        if (PARSE_DEBUG) qDebug() << "-> aggregate_name:" << aggregate_name;
                     }
-                    if ( !bchData.kitems_sec.isEmpty() ) {
-                        exBchData.min_kitems = std::min(exBchData.kitems_sec_dflt, bchData.kitems_sec_dflt);
-                        exBchData.max_kitems = std::max(exBchData.kitems_sec_dflt, bchData.kitems_sec_dflt);
+                    else {
+                        qCritical() << "Results parsing: missing benchmark field 'aggregate_name'";
+                        continue;
                     }
+                    // Type
+                    if (aggregate_name == "mean") {
+                        exBchData.mean_cpu  = bchData.cpu_time_us;
+                        exBchData.mean_real = bchData.real_time_us;
+                        if ( !bchData.kbytes_sec.isEmpty() )
+                            exBchData.mean_kbytes = bchData.kbytes_sec_dflt;
+                        if ( !bchData.kitems_sec.isEmpty() )
+                            exBchData.mean_kitems = bchData.kitems_sec_dflt;
+                    }
+                    else if (aggregate_name == "median") {
+                        exBchData.median_cpu  = bchData.cpu_time_us;
+                        exBchData.median_real = bchData.real_time_us;
+                        if ( !bchData.kbytes_sec.isEmpty() )
+                            exBchData.median_kbytes = bchData.kbytes_sec_dflt;
+                        if ( !bchData.kitems_sec.isEmpty() )
+                            exBchData.median_kitems = bchData.kitems_sec_dflt;
+                    }
+                    else if (aggregate_name == "stddev") {
+                        exBchData.stddev_cpu  = bchData.cpu_time_us;
+                        exBchData.stddev_real = bchData.real_time_us;
+                        if ( !bchData.kbytes_sec.isEmpty() )
+                            exBchData.stddev_kbytes = bchData.kbytes_sec_dflt;
+                        if ( !bchData.kitems_sec.isEmpty() )
+                            exBchData.stddev_kitems = bchData.kitems_sec_dflt;
+                    }
+                    else if (aggregate_name == "cv") {
+                        exBchData.cv_cpu  = bchData.cpu_time.back()  * 100;  // percent
+                        exBchData.cv_real = bchData.real_time.back() * 100;
+                        if ( !bchData.kbytes_sec.isEmpty() )
+                            exBchData.cv_kbytes = bchData.kbytes_sec_dflt * 100;
+                        if ( !bchData.kitems_sec.isEmpty() )
+                            exBchData.cv_kitems = bchData.kitems_sec_dflt * 100;
+                        bchResults.meta.hasCv = true;
+                    }
+                    else {
+                        qCritical() << "Results parsing: unknown benchmark value for 'aggregate_name' ->" << aggregate_name;
+                        continue;
+                    }
+                    
+                    // New aggregate line
+                    if (PARSE_DEBUG) qDebug() << "||";
                 }
+                
+                /*
+                 * Iteration type (from aggregate)
+                 */
                 else
                 {
-                    if (exBchData.min_cpu  > bchData.cpu_time_us)  exBchData.min_cpu = bchData.cpu_time_us;
-                    if (exBchData.max_cpu  < bchData.cpu_time_us)  exBchData.max_cpu = bchData.cpu_time_us;
+                    if (PARSE_DEBUG) qDebug() << "-> append iteration:" << exBchData.name;
                     
-                    if (exBchData.min_real > bchData.real_time_us) exBchData.min_real = bchData.real_time_us;
-                    if (exBchData.max_real < bchData.real_time_us) exBchData.max_real = bchData.real_time_us;
+                    // Append data
+                    exBchData.cpu_time.append( bchData.cpu_time.back() );
+                    exBchData.cpu_time_us = std::min(exBchData.cpu_time_us, bchData.cpu_time_us);
+                    
+                    exBchData.real_time.append( bchData.real_time.back() );
+                    exBchData.real_time_us = std::min(exBchData.real_time_us, bchData.real_time_us);
                     
                     if ( !bchData.kbytes_sec.isEmpty() ) {
-                        if (exBchData.min_kbytes > bchData.kbytes_sec_dflt) exBchData.min_kbytes = bchData.kbytes_sec_dflt;
-                        if (exBchData.max_kbytes < bchData.kbytes_sec_dflt) exBchData.max_kbytes = bchData.kbytes_sec_dflt;
+                        exBchData.kbytes_sec.append( bchData.kbytes_sec_dflt );
+                        exBchData.kbytes_sec_dflt = std::min(exBchData.kbytes_sec_dflt, bchData.kbytes_sec_dflt);
                     }
                     if ( !bchData.kitems_sec.isEmpty() ) {
-                        if (exBchData.min_kitems > bchData.kitems_sec_dflt) exBchData.min_kitems = bchData.kitems_sec_dflt;
-                        if (exBchData.max_kitems < bchData.kitems_sec_dflt) exBchData.max_kitems = bchData.kitems_sec_dflt;
+                        exBchData.kitems_sec.append( bchData.kitems_sec_dflt );
+                        exBchData.kitems_sec_dflt = std::min(exBchData.kitems_sec_dflt, bchData.kitems_sec_dflt);
                     }
+                    
+                    // Min/Max
+                    if (!exBchData.hasAggregate) //First -> init
+                    {
+                        exBchData.min_cpu  = exBchData.cpu_time_us;
+                        exBchData.max_cpu  = std::max(exBchData.cpu_time_us,  bchData.cpu_time_us);
+    
+                        exBchData.min_real = exBchData.real_time_us;
+                        exBchData.max_real = std::max(exBchData.real_time_us, bchData.real_time_us);
+                        
+                        if ( !bchData.kbytes_sec.isEmpty() ) {
+                            exBchData.min_kbytes = exBchData.kbytes_sec_dflt;
+                            exBchData.max_kbytes = std::max(exBchData.kbytes_sec_dflt, bchData.kbytes_sec_dflt);
+                        }
+                        if ( !bchData.kitems_sec.isEmpty() ) {
+                            exBchData.min_kitems = exBchData.kitems_sec_dflt;
+                            exBchData.max_kitems = std::max(exBchData.kitems_sec_dflt, bchData.kitems_sec_dflt);
+                        }
+                    }
+                    else
+                    {
+                        if (exBchData.min_cpu  > bchData.cpu_time_us)  exBchData.min_cpu = bchData.cpu_time_us;
+                        if (exBchData.max_cpu  < bchData.cpu_time_us)  exBchData.max_cpu = bchData.cpu_time_us;
+                        
+                        if (exBchData.min_real > bchData.real_time_us) exBchData.min_real = bchData.real_time_us;
+                        if (exBchData.max_real < bchData.real_time_us) exBchData.max_real = bchData.real_time_us;
+                        
+                        if ( !bchData.kbytes_sec.isEmpty() ) {
+                            if (exBchData.min_kbytes > bchData.kbytes_sec_dflt) exBchData.min_kbytes = bchData.kbytes_sec_dflt;
+                            if (exBchData.max_kbytes < bchData.kbytes_sec_dflt) exBchData.max_kbytes = bchData.kbytes_sec_dflt;
+                        }
+                        if ( !bchData.kitems_sec.isEmpty() ) {
+                            if (exBchData.min_kitems > bchData.kitems_sec_dflt) exBchData.min_kitems = bchData.kitems_sec_dflt;
+                            if (exBchData.max_kitems < bchData.kitems_sec_dflt) exBchData.max_kitems = bchData.kitems_sec_dflt;
+                        }
+                    }
+                    
+                    // State
+                    exBchData.hasAggregate = true;
+                    bchResults.meta.hasAggregate = true;
+                    bchResults.meta.onlyAggregate = false;
+                    
+                    // Debug
+                    if (PARSE_DEBUG) {
+                        qDebug() << "** exBchData.min_cpu:"  << exBchData.min_cpu;
+                        qDebug() << "** exBchData.max_cpu:"  << exBchData.max_cpu;
+                        qDebug() << "** exBchData.min_real:" << exBchData.min_real;
+                        qDebug() << "** exBchData.max_real:" << exBchData.max_real;
+                        if ( !exBchData.kbytes_sec.isEmpty() ) {
+                            qDebug() << "** exBchData.min_kbytes:" << exBchData.min_kbytes;
+                            qDebug() << "** exBchData.max_kbytes:" << exBchData.max_kbytes;
+                        }
+                        if ( !exBchData.kitems_sec.isEmpty() ) {
+                            qDebug() << "** exBchData.min_kitems:" << exBchData.min_kitems;
+                            qDebug() << "** exBchData.max_kitems:" << exBchData.max_kitems;
+                        }
+                    }
+                    
+                    // New  append line
+                    if (PARSE_DEBUG) qDebug() << "|";
                 }
-                
-                // State
-                exBchData.hasAggregate = true;
-                bchResults.meta.hasAggregate = true;
-                
-                // Debug
-                if (PARSE_DEBUG) {
-                    qDebug() << "** exBchData.min_cpu:"  << exBchData.min_cpu;
-                    qDebug() << "** exBchData.max_cpu:"  << exBchData.max_cpu;
-                    qDebug() << "** exBchData.min_real:" << exBchData.min_real;
-                    qDebug() << "** exBchData.max_real:" << exBchData.max_real;
-                    if ( !exBchData.kbytes_sec.isEmpty() ) {
-                        qDebug() << "** exBchData.min_kbytes:" << exBchData.min_kbytes;
-                        qDebug() << "** exBchData.max_kbytes:" << exBchData.max_kbytes;
-                    }
-                    if ( !exBchData.kitems_sec.isEmpty() ) {
-                        qDebug() << "** exBchData.min_kitems:" << exBchData.min_kitems;
-                        qDebug() << "** exBchData.max_kitems:" << exBchData.max_kitems;
-                    }
-                }
-                
-                // New  append line
-                if (PARSE_DEBUG) qDebug() << "|";
             }
-            //
-            // New benchmark
+            
+            /*
+             * New benchmark
+             */
             else
             {
+                /*
+                 * Aggregate-only type
+                 */
+                if (bchData.run_type == "aggregate")
+                {
+                    if (PARSE_DEBUG) qDebug() << "-> new aggregate-only";
+                    
+                    // Name
+                    QString aggregate_name;
+                    if (bchObj.contains("aggregate_name") && bchObj["aggregate_name"].isString())
+                    {
+                        aggregate_name = bchObj["aggregate_name"].toString();
+                        if (PARSE_DEBUG) qDebug() << "-> aggregate_name:" << aggregate_name;
+                    }
+                    else {
+                        qCritical() << "Results parsing: missing benchmark field 'aggregate_name'";
+                        continue;
+                    }
+                    // Type
+                    if (aggregate_name == "mean") {
+                        bchData.mean_cpu  = bchData.cpu_time_us;
+                        bchData.mean_real = bchData.real_time_us;
+                        if ( !bchData.kbytes_sec.isEmpty() )
+                            bchData.mean_kbytes = bchData.kbytes_sec_dflt;
+                        if ( !bchData.kitems_sec.isEmpty() )
+                            bchData.mean_kitems = bchData.kitems_sec_dflt;
+                    }
+                    else if (aggregate_name == "median") {
+                        bchData.median_cpu  = bchData.cpu_time_us;
+                        bchData.median_real = bchData.real_time_us;
+                        if ( !bchData.kbytes_sec.isEmpty() )
+                            bchData.median_kbytes = bchData.kbytes_sec_dflt;
+                        if ( !bchData.kitems_sec.isEmpty() )
+                            bchData.median_kitems = bchData.kitems_sec_dflt;
+                    }
+                    else if (aggregate_name == "stddev") {
+                        bchData.stddev_cpu  = bchData.cpu_time_us;
+                        bchData.stddev_real = bchData.real_time_us;
+                        if ( !bchData.kbytes_sec.isEmpty() )
+                            bchData.stddev_kbytes = bchData.kbytes_sec_dflt;
+                        if ( !bchData.kitems_sec.isEmpty() )
+                            bchData.stddev_kitems = bchData.kitems_sec_dflt;
+                    }
+                    else if (aggregate_name == "cv") {
+                        bchData.cv_cpu  = bchData.cpu_time.back()  * 100;  // percent
+                        bchData.cv_real = bchData.real_time.back() * 100;
+                        if ( !bchData.kbytes_sec.isEmpty() )
+                            bchData.cv_kbytes = bchData.kbytes_sec_dflt * 100;
+                        if ( !bchData.kitems_sec.isEmpty() )
+                            bchData.cv_kitems = bchData.kitems_sec_dflt * 100;
+                        bchResults.meta.hasCv = true;
+                    }
+                    else {
+                        qCritical() << "Results parsing: unknown benchmark value for 'aggregate_name' ->" << aggregate_name;
+                        continue;
+                    }
+                    
+                    // Init
+                    bchData.hasAggregate = true;
+                    bchResults.meta.hasAggregate = true;
+                    
+                    bchData.cpu_time_us  = -1;
+                    bchData.real_time_us = -1;
+                    bchData.min_cpu  = bchData.max_cpu  = -1;
+                    bchData.min_real = bchData.max_real = -1;
+                }
+                
+                /*
+                 * Add new benchmark
+                 */
                 // Arguments (extract from 'run_name')
                 bchData.arguments = bchData.run_name.split('/');
                 QString bchName = bchData.arguments.front();
@@ -486,7 +602,7 @@ BenchResults ResultParser::parseJsonFile(const QString &filename)
                 if ( bchData.base_name.startsWith("JOMT_") )
                 {
                     // Examples: "JOMT_Fill_vector<int>/64" Vs "JOMT_Fill_deque<int>/64"
-                    bchData.base_name = bchData.base_name.remove(0,5); //remove prefix
+                    bchData.base_name = bchData.base_name.remove(0,5);  //remove prefix
                     int idx = bchData.base_name.indexOf('_');
                     if (idx > 0)
                     {
@@ -527,6 +643,7 @@ BenchResults ResultParser::parseJsonFile(const QString &filename)
                     bchResults.meta.maxArguments = bchData.arguments.size();
                 if (bchData.templates.size() > bchResults.meta.maxTemplates)
                     bchResults.meta.maxTemplates = bchData.templates.size();
+                bchResults.meta.onlyAggregate &= bchData.min_real < 0.;
                 
                 //
                 // Push new BenchData

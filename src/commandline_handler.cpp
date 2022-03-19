@@ -29,53 +29,53 @@
 #include <QFileInfo>
 #include <QDebug>
 
-const QString ct_name("chart-type");
-const QString cx_name("chart-x");
-const QString cy_name("chart-y");
-const QString cz_name("chart-z");
-const QString fa_name("append");
-const QString fo_name("overwrite");
+const char* ct_name = "chart-type";
+const char* cx_name = "chart-x";
+const char* cy_name = "chart-y";
+const char* cz_name = "chart-z";
+const char* fa_name = "append";
+const char* fo_name = "overwrite";
 
 
 CommandLineHandler::CommandLineHandler()
 {
     // Parser configuration
-    parser.setApplicationDescription("Jack of my trade - Help");
-    parser.addHelpOption();
-    parser.addVersionOption();
-    parser.addPositionalArgument("file", "Benchmark results file in json to parse.", "[file]");
+    mParser.setApplicationDescription("JOMT - Help");
+    mParser.addHelpOption();
+    mParser.addVersionOption();
+    mParser.addPositionalArgument("file", "Benchmark results file in json to parse.", "[file]");
     
     QCommandLineOption chartTypeOption(QStringList() << "ct" << ct_name,
                "Chart type (e.g. Lines, Boxes, 3DBars)", "chart_type", "Lines");
-    parser.addOption(chartTypeOption);
+    mParser.addOption(chartTypeOption);
     
     QCommandLineOption chartXOption(QStringList() << "cx" << cx_name,
                "Chart X-axis (e.g. a1, t2)", "chart_x", "a1");
-    parser.addOption(chartXOption);
+    mParser.addOption(chartXOption);
     
     QCommandLineOption chartYOption(QStringList() << "cy" << cy_name,
                "Chart Y-axis (e.g. CPUTime, Bytes, RealMeanTime, ItemsMin)", "chart_y", "RealTime");
-    parser.addOption(chartYOption);
+    mParser.addOption(chartYOption);
     
     QCommandLineOption chartZOption(QStringList() << "cz" << cz_name,
                "Chart Z-axis (e.g. auto, a2, t1)", "chart_z", "auto");
-    parser.addOption(chartZOption);
+    mParser.addOption(chartZOption);
     
     QCommandLineOption appendOption(QStringList() << "ap" << fa_name,
                "Files to append by renaming (uses ';' as separator)", "files...");
-    parser.addOption(appendOption);
+    mParser.addOption(appendOption);
     
     QCommandLineOption overwriteOption(QStringList() << "ow" << fo_name,
                "Files to append by overwriting (uses ';' as separator)", "files...");
-    parser.addOption(overwriteOption);
+    mParser.addOption(overwriteOption);
 }
 
 bool CommandLineHandler::process(const QApplication& app)
 {
     // Process
-    parser.process(app);
+    mParser.process(app);
     
-    const QStringList args = parser.positionalArguments();
+    const QStringList args = mParser.positionalArguments();
     
     if ( args.empty() )
         return false; // Not handled
@@ -83,20 +83,21 @@ bool CommandLineHandler::process(const QApplication& app)
         qWarning() << "[CmdLine] Ignoring additional arguments after first one";
     
     // Parse results
-    BenchResults bchResults = ResultParser::parseJsonFile( args[0] );
+    QString errorMsg;
+    BenchResults bchResults = ResultParser::parseJsonFile( args[0], errorMsg);
     
     if ( bchResults.benchmarks.isEmpty() ) {
-        qCritical() << "Error: unable to open benchmark results file:" << args[0];
+        qCritical() << "[CmdLine] Error parsing file: " << args[0] << " -> " << errorMsg;
         return true;
     }
     
     // Get params
-    QString chartType = parser.value(ct_name).toLower();
-    QString chartX    = parser.value(cx_name).toLower();
-    QString chartY    = parser.value(cy_name).toLower();
-    QString chartZ    = parser.value(cz_name).toLower();
-    QString apFiles   = parser.value(fa_name);
-    QString owFiles   = parser.value(fo_name);
+    QString chartType = mParser.value(ct_name).toLower();
+    QString chartX    = mParser.value(cx_name).toLower();
+    QString chartY    = mParser.value(cy_name).toLower();
+    QString chartZ    = mParser.value(cz_name).toLower();
+    QString apFiles   = mParser.value(fa_name);
+    QString owFiles   = mParser.value(fo_name);
     
     //
     // Parse params
@@ -104,38 +105,43 @@ bool CommandLineHandler::process(const QApplication& app)
     
     // Append files
     bool multiFiles = false;
+    QVector<FileReload> addFilenames;
     if ( !apFiles.isEmpty() )
     {
-        QStringList apList = apFiles.split(';', QString::SkipEmptyParts);
-        for (const auto& fileName : apList)
+        QStringList apList = apFiles.split(';', Qt::SkipEmptyParts);
+        for (const auto& fileName : qAsConst(apList))
         {
             if ( QFile::exists(fileName) )
             {
-                BenchResults newResults = ResultParser::parseJsonFile(fileName);
+                QString errorMsg;
+                BenchResults newResults = ResultParser::parseJsonFile(fileName, errorMsg);
                 if (newResults.benchmarks.size() <= 0) {
-                    qCritical() << "[CmdLine] Error parsing append file:" << fileName;
+                    qCritical() << "[CmdLine] Error parsing append file: " << fileName << " -> " << errorMsg;
                     return true;
                 }
                 bchResults.appendResults(newResults);
                 multiFiles = true;
+                addFilenames.append( {fileName, true} );
             }
         }
     }
     // Overwrite files
     if ( !owFiles.isEmpty() )
     {
-        QStringList owList = owFiles.split(';', QString::SkipEmptyParts);
-        for (const auto& fileName : owList)
+        QStringList owList = owFiles.split(';', Qt::SkipEmptyParts);
+        for (const auto& fileName : qAsConst(owList))
         {
             if ( QFile::exists(fileName) )
             {
-                BenchResults newResults = ResultParser::parseJsonFile(fileName);
+                QString errorMsg;
+                BenchResults newResults = ResultParser::parseJsonFile(fileName, errorMsg);
                 if (newResults.benchmarks.size() <= 0) {
-                    qCritical() << "[CmdLine] Error parsing overwrite file:" << fileName;
+                    qCritical() << "[CmdLine] Error parsing overwrite file: " << fileName << " -> " << errorMsg;
                     return true;
                 }
                 bchResults.overwriteResults(newResults);
                 multiFiles = true;
+                addFilenames.append( {fileName, false} );
             }
         }
     }
@@ -288,7 +294,7 @@ bool CommandLineHandler::process(const QApplication& app)
         case ChartSplineType:
         {
             PlotterLineChart *plotLines = new PlotterLineChart(bchResults, bchIdxs,
-                                                               plotParams, fileName);
+                                                               plotParams, fileName, addFilenames);
             plotLines->show();
             break;
         }
@@ -296,28 +302,28 @@ bool CommandLineHandler::process(const QApplication& app)
         case ChartHBarType:
         {
             PlotterBarChart *plotBars = new PlotterBarChart(bchResults, bchIdxs,
-                                                             plotParams, fileName);
+                                                             plotParams, fileName, addFilenames);
             plotBars->show();
             break;
         }
         case ChartBoxType:
         {
             PlotterBoxChart *plotBoxes = new PlotterBoxChart(bchResults, bchIdxs,
-                                                             plotParams, fileName);
+                                                             plotParams, fileName, addFilenames);
             plotBoxes->show();
             break;
         }
         case Chart3DBarsType:
         {
             Plotter3DBars *plot3DBars = new Plotter3DBars(bchResults, bchIdxs,
-                                                          plotParams, fileName);
+                                                          plotParams, fileName, addFilenames);
             plot3DBars->show();
             break;
         }
         case Chart3DSurfaceType:
         {
             Plotter3DSurface *plot3DSurface = new Plotter3DSurface(bchResults, bchIdxs,
-                                                                   plotParams, fileName);
+                                                                   plotParams, fileName, addFilenames);
             plot3DSurface->show();
             break;
         }

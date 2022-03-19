@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1080</width>
-    <height>618</height>
+    <height>655</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -36,7 +36,7 @@
         </font>
        </property>
        <property name="title">
-        <string>Options</string>
+        <string/>
        </property>
        <layout class="QVBoxLayout" name="verticalLayout_13">
         <item>
@@ -49,13 +49,6 @@
             <widget class="QComboBox" name="comboBoxTheme"/>
            </item>
           </layout>
-         </widget>
-        </item>
-        <item>
-         <widget class="Line" name="line_5">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
          </widget>
         </item>
         <item>
@@ -174,14 +167,39 @@
              </item>
             </layout>
            </item>
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayout_8">
+             <item>
+              <widget class="QLabel" name="label_4">
+               <property name="text">
+                <string>Series:</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="pushButtonSeries">
+               <property name="text">
+                <string>Edit</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayout_9">
+             <item>
+              <widget class="QLabel" name="label_5">
+               <property name="text">
+                <string>Time unit:</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QComboBox" name="comboBoxTimeUnit"/>
+             </item>
+            </layout>
+           </item>
           </layout>
-         </widget>
-        </item>
-        <item>
-         <widget class="Line" name="line">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
          </widget>
         </item>
         <item>
@@ -355,7 +373,7 @@
                   </size>
                  </property>
                  <property name="decimals">
-                  <number>3</number>
+                  <number>6</number>
                  </property>
                  <property name="maximum">
                   <double>9999999999.000000000000000</double>
@@ -405,7 +423,7 @@
                   </size>
                  </property>
                  <property name="decimals">
-                  <number>3</number>
+                  <number>6</number>
                  </property>
                  <property name="maximum">
                   <double>9999999999.000000000000000</double>
@@ -483,25 +501,69 @@
          </spacer>
         </item>
         <item>
-         <layout class="QHBoxLayout" name="horizontalLayout_28">
+         <layout class="QVBoxLayout" name="verticalLayout_3">
           <item>
-           <widget class="QPushButton" name="pushButtonSnapshot">
-            <property name="minimumSize">
-             <size>
-              <width>0</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>100</width>
-              <height>16777215</height>
-             </size>
-            </property>
-            <property name="text">
-             <string>Snapshot</string>
-            </property>
-           </widget>
+           <layout class="QHBoxLayout" name="horizontalLayout_7">
+            <item>
+             <widget class="QCheckBox" name="checkBoxAutoReload">
+              <property name="text">
+               <string>Auto-reload</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="labelLastReload">
+              <property name="text">
+               <string>(Last: )</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_6">
+            <item>
+             <widget class="QPushButton" name="pushButtonReload">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Reload</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="pushButtonSnapshot">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>Snapshot</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </item>
          </layout>
         </item>

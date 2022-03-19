@@ -15,44 +15,65 @@
 
 #include "benchmark_results.h"
 #include "result_parser.h"
+#include "plot_parameters.h"
 #include "commandline_handler.h"
 #include "result_selector.h"
 
+#include <QDir>
+#include <QIcon>
 #include <QApplication>
-//#include <QDir>
+#include <QScopedPointer>
+#include <QDebug>
 
-#define APP_VER "0.9b"
+#define APP_NAME    "JOMT"
+#define APP_VER     "1.0b"
+#define APP_ICON    ":/jomt_icon.png"
+
+// Debug
+#define DEFAULT_DIR   ""
+#define DEFAULT_FILE  ""
 
 
 int main(int argc, char *argv[])
 {
+    // Init
     QApplication app(argc, argv);
+    QCoreApplication::setApplicationName(APP_NAME);
     QCoreApplication::setApplicationVersion(APP_VER);
+    QApplication::setWindowIcon( QIcon(APP_ICON) );
     
+    QDir configDir(config_folder);
+    if (!configDir.exists())
+        configDir.mkpath(".");
     
     //
     // Command line options
     CommandLineHandler cmdHandler;
     bool isCmd = cmdHandler.process(app);
     
+    QScopedPointer<ResultSelector> resultSelector;
     if (!isCmd)
     {
-//        // Parse Test
-//        QDir jmtDir("E:/Work/JMT/");
-//        QString fileName = "bench_results.json";
-//        
-//        BenchResults bchResults = ResultParser::parseJsonFile( jmtDir.filePath(fileName) );
-//        
-//        if ( bchResults.benchmarks.isEmpty() ) {
-//            qCritical("Error: unable to open benchmark results file");
-//            return 1;
-//        }
-//        // Selector Test
-//        ResultSelector rs(bchResults, jmtDir.filePath(fileName));
-        
-        // Show empty selector
-        ResultSelector* rs = new ResultSelector();
-        rs->show();
+        // Debug test
+        QString fileName(DEFAULT_FILE);
+        if (!QString(DEFAULT_DIR).isEmpty() && !fileName.isEmpty())
+        {
+            QDir jmtDir(DEFAULT_DIR);
+            
+            QString errorMsg;
+            BenchResults bchResults = ResultParser::parseJsonFile( jmtDir.filePath(fileName), errorMsg );
+            
+            if ( bchResults.benchmarks.isEmpty() ) {
+                qCritical() << "Error parsing file: " << fileName << " -> " << errorMsg;
+                return 1;
+            }
+            // Selector Test
+            resultSelector.reset(new ResultSelector(bchResults, jmtDir.filePath(fileName)));
+        }
+        else
+            // Show empty selector
+            resultSelector.reset(new ResultSelector());
+        resultSelector->show();
     }
     
     //

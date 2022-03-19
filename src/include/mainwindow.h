@@ -13,23 +13,27 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef COMMANDLINEHANDLER_H
-#define COMMANDLINEHANDLER_H
+#ifndef MAINWINDOW_H
+#define MAINWINDOW_H
 
-#include <QCommandLineParser>
+#include <QMainWindow>
 
-class QApplication;
+QT_BEGIN_NAMESPACE
+namespace Ui { class MainWindow; }
+QT_END_NAMESPACE
 
 
-class CommandLineHandler
+class MainWindow : public QMainWindow
 {
-public:
-    CommandLineHandler();
+    Q_OBJECT
     
-    bool process(const QApplication& app);
+public:
+    MainWindow(QWidget *parent = nullptr);
+    ~MainWindow();
     
 private:
-    QCommandLineParser parser;
+    Ui::MainWindow *ui;
 };
 
-#endif // COMMANDLINEHANDLER_H
+
+#endif // MAINWINDOW_H

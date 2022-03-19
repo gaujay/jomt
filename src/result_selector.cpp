@@ -25,17 +25,27 @@
 #include "plotter_3dbars.h"
 #include "plotter_3dsurface.h"
 
+#include <QFileInfo>
 #include <QFileDialog>
+#include <QDateTime>
+#include <QCollator>
 #include <QMessageBox>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QScreen>
+#include <QGuiApplication>
+
+static const char* config_file = "config_selector.json";
 
 
 ResultSelector::ResultSelector(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::ResultSelector)
+    , mWatcher(parent)
 {
     ui->setupUi(this);
     
-    this->setWindowTitle( "Result selector" );
+    this->setWindowTitle("JOMT");
     
     ui->pushButtonAppend->setEnabled(false);
     ui->pushButtonOverwrite->setEnabled(false);
@@ -45,31 +55,38 @@ ResultSelector::ResultSelector(QWidget *parent)
     ui->pushButtonPlot->setEnabled(false);
     
     connectUI();
+    loadConfig();
 }
 
-ResultSelector::ResultSelector(const BenchResults &bchResults_, const QString &fileName, QWidget *parent)
+ResultSelector::ResultSelector(const BenchResults &bchResults, const QString &fileName, QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::ResultSelector)
-    , bchResults(bchResults_)
+    , mBchResults(bchResults)
+    , mWatcher(parent)
 {
     ui->setupUi(this);
     
     if ( !fileName.isEmpty() ) {
         QFileInfo fileInfo(fileName);
-        this->setWindowTitle( fileInfo.fileName() );
+        this->setWindowTitle("JOMT - " + fileInfo.fileName());
     }
-    origFilename = fileName; // For reload
-    updateResults();
+    mOrigFilename = fileName; // For reload
+    updateResults(false);
     
     connectUI();
+    loadConfig();
+    
+    if (ui->checkBoxAutoReload->isChecked())
+        onCheckAutoReload(Qt::Checked);
 }
 
 ResultSelector::~ResultSelector()
 {
+    saveConfig();
     delete ui;
 }
 
-
+// Private
 void ResultSelector::connectUI()
 {
     connect(ui->treeWidget, &QTreeWidget::itemChanged, this, &ResultSelector::onItemChanged);
@@ -78,10 +95,13 @@ void ResultSelector::connectUI()
     connect(ui->comboBoxX,    QOverload<int>::of(&QComboBox::activated), this, &ResultSelector::onComboXChanged);
     connect(ui->comboBoxZ,    QOverload<int>::of(&QComboBox::activated), this, &ResultSelector::onComboZChanged);
     
+    connect(&mWatcher,              &QFileSystemWatcher::fileChanged, this, &ResultSelector::onAutoReload);
+    connect(ui->checkBoxAutoReload, &QCheckBox::stateChanged,         this, &ResultSelector::onCheckAutoReload);
+    connect(ui->pushButtonReload,   &QPushButton::clicked,            this, &ResultSelector::onReloadClicked);
+    
     connect(ui->pushButtonNew,       &QPushButton::clicked, this, &ResultSelector::onNewClicked);
     connect(ui->pushButtonAppend,    &QPushButton::clicked, this, &ResultSelector::onAppendClicked);
     connect(ui->pushButtonOverwrite, &QPushButton::clicked, this, &ResultSelector::onOverwriteClicked);
-    connect(ui->pushButtonReload,    &QPushButton::clicked, this, &ResultSelector::onReloadClicked);
     
     connect(ui->pushButtonSelectAll,  &QPushButton::clicked, this, &ResultSelector::onSelectAllClicked);
     connect(ui->pushButtonSelectNone, &QPushButton::clicked, this, &ResultSelector::onSelectNoneClicked);
@@ -89,61 +109,153 @@ void ResultSelector::connectUI()
     connect(ui->pushButtonPlot, &QPushButton::clicked, this, &ResultSelector::onPlotClicked);
 }
 
+void ResultSelector::loadConfig()
+{
+    // Load options from file
+    QFile configFile(QString(config_folder) + config_file);
+    if (configFile.open(QIODevice::ReadOnly))
+    {
+        QByteArray configData = configFile.readAll();
+        configFile.close();
+        QJsonDocument configDoc(QJsonDocument::fromJson(configData));
+        QJsonObject json = configDoc.object();
+        
+        // FileDialog
+        if (json.contains("workingDir") && json["workingDir"].isString())
+            mWorkingDir = json["workingDir"].toString();
+        // Actions
+        if (json.contains("autoReload") && json["autoReload"].isBool())
+            ui->checkBoxAutoReload->setChecked( json["autoReload"].toBool() );
+    }
+    else
+    {
+        if (configFile.exists())
+            qWarning() << "Couldn't read: " << QString(config_folder) + config_file;
+    }
+    
+    // Default size
+    QSize size = this->size();
+    QSize newSize = QGuiApplication::primaryScreen()->size();
+    newSize *= 0.375f;
+    if (newSize.width() > size.width() && newSize.height() > size.height())
+        this->resize(newSize.height() * 16.f/9.f, newSize.height());
+}
+
+void ResultSelector::saveConfig()
+{
+    // Save options to file
+    QFile configFile(QString(config_folder) + config_file);
+    if (configFile.open(QIODevice::WriteOnly))
+    {
+        QJsonObject json;
+        
+        // FileDialog
+        json["workingDir"] = mWorkingDir;
+        // Actions
+        json["autoReload"] = ui->checkBoxAutoReload->isChecked();
+        
+        configFile.write( QJsonDocument(json).toJson() );
+    }
+    else
+        qWarning() << "Couldn't update: " << QString(config_folder) + config_file;
+}
+
 void ResultSelector::updateComboBoxY()
 {
     PlotChartType chartType = (PlotChartType)ui->comboBoxType->currentData().toInt();
+    PlotValueType prevYType = (PlotValueType)-1;
+    if (ui->comboBoxY->count() > 0)
+        prevYType = (PlotValueType)ui->comboBoxY->currentData().toInt();
     
-    // Classic
-    if ((!bchResults.meta.hasAggregate || chartType == ChartBoxType)
-            && ui->comboBoxY->findData(QVariant(RealTimeType)) == -1)
+    // Classic or Boxes
+    if (!mBchResults.meta.hasAggregate || chartType == ChartBoxType)
     {
         ui->comboBoxY->clear();
         
         ui->comboBoxY->addItem("Real time",     QVariant(RealTimeType));
         ui->comboBoxY->addItem("CPU time",      QVariant(CpuTimeType));
         ui->comboBoxY->addItem("Iterations",    QVariant(IterationsType));
-        if (bchResults.meta.hasBytesSec)
+        if (mBchResults.meta.hasBytesSec)
             ui->comboBoxY->addItem("Bytes/s",   QVariant(BytesType));
-        if (bchResults.meta.hasItemsSec)
+        if (mBchResults.meta.hasItemsSec)
             ui->comboBoxY->addItem("Items/s",   QVariant(ItemsType));
     }
     // Aggregate
-    else if (ui->comboBoxY->findData(QVariant(RealTimeMinType)) == -1)
+    else
     {
         ui->comboBoxY->clear();
         
-        ui->comboBoxY->addItem("Real min time",     QVariant(RealTimeMinType));
-        ui->comboBoxY->addItem("Real mean time",    QVariant(RealTimeMeanType));
-        ui->comboBoxY->addItem("Real median time",  QVariant(RealTimeMedianType));
+        if (!mBchResults.meta.onlyAggregate)
+            ui->comboBoxY->addItem("Real min time",     QVariant(RealTimeMinType));
+        ui->comboBoxY->addItem("Real mean time",        QVariant(RealTimeMeanType));
+        ui->comboBoxY->addItem("Real median time",      QVariant(RealTimeMedianType));
+        ui->comboBoxY->addItem("Real stddev time",      QVariant(RealTimeStddevType));
+        if (mBchResults.meta.hasCv)
+            ui->comboBoxY->addItem("Real cv percent",   QVariant(RealTimeCvType));
         
-        ui->comboBoxY->addItem("CPU min time",      QVariant(CpuTimeMinType));
-        ui->comboBoxY->addItem("CPU mean time",     QVariant(CpuTimeMeanType));
-        ui->comboBoxY->addItem("CPU median time",   QVariant(CpuTimeMedianType));
+        if (!mBchResults.meta.onlyAggregate)
+            ui->comboBoxY->addItem("CPU min time",      QVariant(CpuTimeMinType));
+        ui->comboBoxY->addItem("CPU mean time",         QVariant(CpuTimeMeanType));
+        ui->comboBoxY->addItem("CPU median time",       QVariant(CpuTimeMedianType));
+        ui->comboBoxY->addItem("CPU stddev time",       QVariant(CpuTimeStddevType));
+        if (mBchResults.meta.hasCv)
+            ui->comboBoxY->addItem("CPU cv percent",    QVariant(CpuTimeCvType));
         
-        ui->comboBoxY->addItem("Iterations",        QVariant(IterationsType));
+        ui->comboBoxY->addItem("Iterations",            QVariant(IterationsType));
         
-        if (bchResults.meta.hasBytesSec) {
+        if (mBchResults.meta.hasBytesSec) {
             ui->comboBoxY->addItem("Bytes/s min",       QVariant(BytesMinType));
             ui->comboBoxY->addItem("Bytes/s mean",      QVariant(BytesMeanType));
             ui->comboBoxY->addItem("Bytes/s median",    QVariant(BytesMedianType));
+            ui->comboBoxY->addItem("Bytes/s stddev",    QVariant(BytesStddevType));
+            if (mBchResults.meta.hasCv)
+                ui->comboBoxY->addItem("Bytes/s cv",    QVariant(BytesCvType));
         }
-        if (bchResults.meta.hasItemsSec) {
+        if (mBchResults.meta.hasItemsSec) {
             ui->comboBoxY->addItem("Items/s min",       QVariant(ItemsMinType));
             ui->comboBoxY->addItem("Items/s mean",      QVariant(ItemsMeanType));
             ui->comboBoxY->addItem("Items/s median",    QVariant(ItemsMedianType));
+            ui->comboBoxY->addItem("Items/s stddev",    QVariant(ItemsStddevType));
+            if (mBchResults.meta.hasCv)
+                ui->comboBoxY->addItem("Items/s cv",    QVariant(ItemsCvType));
         }
     }
+    // Restore
+    int yIdx = ui->comboBoxY->findData(prevYType);
+    if (yIdx >= 0)
+        ui->comboBoxY->setCurrentIndex(yIdx);
 }
 
-static QTreeWidgetItem* buildTreeItem(const BenchData &bchData, QTreeWidgetItem *item = nullptr)
+// Tree
+class NumericTreeWidgetItem : public QTreeWidgetItem
 {
-    QStringList labels = {bchData.base_name, bchData.templates.join(", "), bchData.arguments.join("/"),
-                          QString::number(bchData.real_time_us), QString::number(bchData.cpu_time_us)};
-    if ( !bchData.kbytes_sec.isEmpty() ) labels.append( QString::number(bchData.kbytes_sec_dflt) );
-    if ( !bchData.kitems_sec.isEmpty() ) labels.append( QString::number(bchData.kitems_sec_dflt) );
+public:
+  NumericTreeWidgetItem(const QStringList &strings)
+      : QTreeWidgetItem(strings) {}
+private:
+  bool operator<(const QTreeWidgetItem &other) const
+  {
+      QCollator collator;
+      collator.setNumericMode(true);
+      int column = treeWidget()->sortColumn();
+      return collator.compare( text( column ), other.text( column ) ) < 0;
+  }
+};
+
+static QTreeWidgetItem* buildTreeItem(const BenchData &bchData, double timeFactor, bool onlyAggregate, QTreeWidgetItem *item = nullptr)
+{
+    QStringList labels = {
+        bchData.base_name, bchData.templates.join(", "), bchData.arguments.join("/"),
+        QString::number((!onlyAggregate ? bchData.real_time_us : bchData.mean_real) * timeFactor),
+        QString::number((!onlyAggregate ? bchData.cpu_time_us  : bchData.mean_cpu)  * timeFactor)
+    };
+    if ( !bchData.kbytes_sec.isEmpty() )
+        labels.append( QString::number(bchData.kbytes_sec_dflt) );
+    if ( !bchData.kitems_sec.isEmpty() )
+        labels.append( QString::number(bchData.kitems_sec_dflt) );
     
     if (item == nullptr) {
-        item = new QTreeWidgetItem(labels);
+        item = new NumericTreeWidgetItem(labels);
     }
     else {
         for (int iC=0; iC<labels.size(); ++iC)
@@ -153,43 +265,111 @@ static QTreeWidgetItem* buildTreeItem(const BenchData &bchData, QTreeWidgetItem 
     return item;
 }
 
-void ResultSelector::updateResults(bool clear)
+static QSet<QString> getUnselectedBenchmarks(const QTreeWidget *tree, const BenchResults &bchResults)
+{
+    QSet<QString> resNames;
+    
+    for (int i=0; i<tree->topLevelItemCount(); ++i)
+    {
+        QTreeWidgetItem *topItem = tree->topLevelItem(i);
+        if (topItem->childCount() <= 0)
+        {
+            if (topItem->checkState(0) == Qt::Unchecked) {
+                int idx = topItem->data(0, Qt::UserRole).toInt();
+                resNames.insert( bchResults.getBenchName(idx) );
+            }
+        }
+        else
+        {
+            for (int j=0; j<topItem->childCount(); ++j)
+            {
+                QTreeWidgetItem *midItem = topItem->child(j);
+                if (midItem->childCount() <= 0)
+                {
+                    if (midItem->checkState(0) == Qt::Unchecked) {
+                        int idx = midItem->data(0, Qt::UserRole).toInt();
+                        resNames.insert( bchResults.getBenchName(idx) );
+                    }
+                }
+                else
+                {
+                    for (int k=0; k<midItem->childCount(); ++k)
+                    {
+                        QTreeWidgetItem *lowItem = midItem->child(k);
+                        if (lowItem->checkState(0) == Qt::Unchecked) {
+                            int idx = lowItem->data(0, Qt::UserRole).toInt();
+                            resNames.insert( bchResults.getBenchName(idx) );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return resNames;
+}
+
+void ResultSelector::updateResults(bool clear, const QSet<QString> unselected)
 {
     //
     // Tree widget
+//    QSet<QString> unselected;
     if (clear)
+    {
+//        if (keepSelection)
+//            unselected = getUnselectedBenchmarks(ui->treeWidget, mBchResults);
         ui->treeWidget->clear();
+    }
+    else
+        ui->treeWidget->sortByColumn(-1, Qt::SortOrder::AscendingOrder); // init: unsorted
+    ui->treeWidget->setSortingEnabled(true);
     
     // Columns
     int iCol = 5;
-    if (bchResults.meta.hasBytesSec) ++iCol;
-    if (bchResults.meta.hasItemsSec) ++iCol;
+    if (mBchResults.meta.hasBytesSec) ++iCol;
+    if (mBchResults.meta.hasItemsSec) ++iCol;
     ui->treeWidget->setColumnCount(iCol);
     
+    // Time unit
+    double timeFactor = 1.;
+    if (     mBchResults.meta.time_unit == "ns") timeFactor = 1000.;
+    else if (mBchResults.meta.time_unit == "ms") timeFactor = 0.001;
+    else                                         mBchResults.meta.time_unit = "us";
+    
     // Populate tree
+    bool anySelected = false;
     QList<QTreeWidgetItem *> items;
     
-    QVector<BenchSubset> bchFamilies = bchResults.segmentFamilies();
-    for (const auto &bchFamily : bchFamilies)
+    QVector<BenchSubset> bchFamilies = mBchResults.segmentFamilies();
+    for (const auto &bchFamily : qAsConst(bchFamilies))
     {
+        bool oneTopSelected = false;
+        bool allTopSelected = true;
         QTreeWidgetItem* topItem = new QTreeWidgetItem( QStringList(bchFamily.name) );
         
         // JOMT: family + container
-        if ( !bchResults.benchmarks[bchFamily.idxs[0]].container.isEmpty() )
+        if ( !mBchResults.benchmarks[bchFamily.idxs[0]].container.isEmpty() )
         {
-            QVector<BenchSubset> bchContainers = bchResults.segmentContainers(bchFamily.idxs);
-            for (const auto &bchContainer : bchContainers)
+            QVector<BenchSubset> bchContainers = mBchResults.segmentContainers(bchFamily.idxs);
+            for (const auto &bchContainer : qAsConst(bchContainers))
             {
+                bool oneMidSelected = false;
+                bool allMidSelected = true;
                 QTreeWidgetItem* midItem = new QTreeWidgetItem( QStringList(bchContainer.name) );
                 
                 for (int idx : bchContainer.idxs)
                 {
-                    QTreeWidgetItem *child = buildTreeItem( bchResults.benchmarks[idx] );
-                    child->setCheckState(0, Qt::Checked);
+                    QTreeWidgetItem *child = buildTreeItem(mBchResults.benchmarks[idx], timeFactor, mBchResults.meta.onlyAggregate);
+                    bool selected = !unselected.contains( mBchResults.getBenchName(idx) );
+                    oneMidSelected |= selected;
+                    allMidSelected &= selected;
+                    child->setCheckState(0, selected ? Qt::Checked : Qt::Unchecked);
                     child->setData(0, Qt::UserRole, idx);
                     midItem->addChild(child);
                 }
-                midItem->setCheckState(0, Qt::Checked);
+                oneTopSelected |= oneMidSelected;
+                allTopSelected &= allMidSelected;
+                midItem->setCheckState(0, oneMidSelected ? (allMidSelected ? Qt::Checked : Qt::PartiallyChecked) : Qt::Unchecked);
                 topItem->addChild(midItem);
             }
         }
@@ -199,36 +379,52 @@ void ResultSelector::updateResults(bool clear)
             // Single
             if (bchFamily.idxs.size() == 1)
             {
-                buildTreeItem(bchResults.benchmarks[bchFamily.idxs[0]], topItem);
-                topItem->setData(0, Qt::UserRole, bchFamily.idxs[0]);
+                int idx = bchFamily.idxs[0];
+                buildTreeItem(mBchResults.benchmarks[idx], timeFactor, mBchResults.meta.onlyAggregate, topItem);
+                oneTopSelected = !unselected.contains( mBchResults.getBenchName(idx) );
+                topItem->setData(0, Qt::UserRole, idx);
             }
             else // Family
             {
                 for (int idx : bchFamily.idxs)
                 {
-                    QTreeWidgetItem *child = buildTreeItem( bchResults.benchmarks[idx] );
-                    child->setCheckState(0, Qt::Checked);
+                    QTreeWidgetItem *child = buildTreeItem(mBchResults.benchmarks[idx], timeFactor, mBchResults.meta.onlyAggregate);
+                    bool selected = !unselected.contains( mBchResults.getBenchName(idx) );
+                    oneTopSelected |= selected;
+                    allTopSelected &= selected;
+                    child->setCheckState(0, selected ? Qt::Checked : Qt::Unchecked);
                     child->setData(0, Qt::UserRole, idx);
                     topItem->addChild(child);
                 }
             }
         }
-        topItem->setCheckState(0, Qt::Checked);
-        items.append(topItem);
+        anySelected |= oneTopSelected;
+        topItem->setCheckState(0, oneTopSelected ? (allTopSelected ? Qt::Checked : Qt::PartiallyChecked) : Qt::Unchecked);
+        items.insert(0, topItem);
     }
     ui->treeWidget->insertTopLevelItems(0, items);
     
+    ui->pushButtonPlot->setEnabled(anySelected);
+    
     // Headers
     QStringList labels = {"Benchmark", "Templates", "Arguments"};
-    if (!bchResults.meta.hasAggregate) {
-        labels << "Real time (us)" << "CPU time (us)";
-        if (bchResults.meta.hasBytesSec) labels << "Bytes/s (k)";
-        if (bchResults.meta.hasItemsSec) labels << "Items/s (k)";
+    if (!mBchResults.meta.hasAggregate) {
+        labels << "Real time (" + mBchResults.meta.time_unit + ")"
+               << "CPU time ("  + mBchResults.meta.time_unit + ")";
+        if (mBchResults.meta.hasBytesSec) labels << "Bytes/s (k)";
+        if (mBchResults.meta.hasItemsSec) labels << "Items/s (k)";
     }
     else {
-        labels << "Real min time (us)" << "CPU min time (us)";
-        if (bchResults.meta.hasBytesSec) labels << "Bytes/s min (k)";
-        if (bchResults.meta.hasItemsSec) labels << "Items/s min (k)";
+        if (!mBchResults.meta.onlyAggregate) {
+            labels << "Real min time (" + mBchResults.meta.time_unit + ")"
+                   << "CPU min time ("  + mBchResults.meta.time_unit + ")";
+        }
+        else {
+            labels << "Real mean time (" + mBchResults.meta.time_unit + ")"
+                   << "CPU mean time ("  + mBchResults.meta.time_unit + ")";
+        }
+        if (mBchResults.meta.hasBytesSec) labels << "Bytes/s min (k)";
+        if (mBchResults.meta.hasItemsSec) labels << "Items/s min (k)";
     }
     
     ui->treeWidget->setHeaderLabels(labels);
@@ -236,13 +432,26 @@ void ResultSelector::updateResults(bool clear)
     ui->treeWidget->expandAll();
     for (int iC=0; iC<ui->treeWidget->columnCount(); ++iC)
         ui->treeWidget->resizeColumnToContents(iC);
-    ui->treeWidget->setSortingEnabled(true);
     
     
     //
     // Chart options
+    PlotChartType prevChartType = (PlotChartType)-1;
+    PlotParamType prevXType = PlotEmptyType;
+    PlotValueType prevYType = (PlotValueType)-1;
+    PlotParamType prevZType = PlotEmptyType;
     if (clear)
     {
+        if (ui->comboBoxType->count() > 0)
+        {
+            prevChartType = (PlotChartType)ui->comboBoxType->currentData().toInt();
+            if (ui->comboBoxX->count() > 0)
+                prevXType = (PlotParamType)ui->comboBoxX->currentData().toList()[0].toInt();
+            if (ui->comboBoxY->count() > 0)
+                prevYType = (PlotValueType)ui->comboBoxY->currentData().toInt();
+            if (ui->comboBoxZ->count() > 0)
+                prevZType = (PlotParamType)ui->comboBoxZ->currentData().toList()[0].toInt();
+        }
         ui->comboBoxType->clear();
         ui->comboBoxX->clear();
         ui->comboBoxY->clear();
@@ -250,27 +459,27 @@ void ResultSelector::updateResults(bool clear)
     }
     
     // Type
-    if (bchResults.meta.maxArguments > 0 || bchResults.meta.maxTemplates > 0) {
+    if (mBchResults.meta.maxArguments > 0 || mBchResults.meta.maxTemplates > 0) {
         ui->comboBoxType->addItem("Lines",      ChartLineType);
         ui->comboBoxType->addItem("Splines",    ChartSplineType);
     }
     ui->comboBoxType->addItem("Bars",   ChartBarType);
     ui->comboBoxType->addItem("HBars",  ChartHBarType);
-    if (bchResults.meta.hasAggregate)
+    if (mBchResults.meta.hasAggregate && !mBchResults.meta.onlyAggregate)
         ui->comboBoxType->addItem("Boxes",  ChartBoxType);
     ui->comboBoxType->addItem("3D Bars",    Chart3DBarsType);
-    if (bchResults.meta.maxArguments > 0 || bchResults.meta.maxTemplates > 0)
+    if (mBchResults.meta.maxArguments > 0 || mBchResults.meta.maxTemplates > 0)
         ui->comboBoxType->addItem("3D Surface", Chart3DSurfaceType);
     
     
     // X-axis
-    for (int i=0; i<bchResults.meta.maxArguments; ++i)
+    for (int i=0; i<mBchResults.meta.maxArguments; ++i)
     {
         QList<QVariant> qvList;
         qvList.append(PlotArgumentType); qvList.append(i);
         ui->comboBoxX->addItem("Argument " + QString::number(i+1), qvList);
     }
-    for (int i=0; i<bchResults.meta.maxTemplates; ++i)
+    for (int i=0; i<mBchResults.meta.maxTemplates; ++i)
     {
         QList<QVariant> qvList;
         qvList.append(PlotTemplateType); qvList.append(i);
@@ -285,10 +494,13 @@ void ResultSelector::updateResults(bool clear)
     if ( !ui->comboBoxX->isEnabled() ) {
         ui->comboBoxZ->setEnabled(false);
     }
-    else {
-        QList<QVariant> qvList;
-        qvList.append(PlotEmptyType); qvList.append(0);
-        ui->comboBoxZ->addItem("Auto", qvList);
+    else
+    {
+        {
+            QList<QVariant> qvList;
+            qvList.append(PlotEmptyType); qvList.append(0);
+            ui->comboBoxZ->addItem("Auto", qvList);
+        }
         
         PlotChartType chartType = (PlotChartType)ui->comboBoxType->currentData().toInt();
         if (chartType == Chart3DBarsType || chartType == Chart3DSurfaceType) // Any 3D charts
@@ -296,22 +508,61 @@ void ResultSelector::updateResults(bool clear)
         else
             ui->comboBoxZ->setEnabled(false);
 
-        for (int i=0; i<bchResults.meta.maxArguments; ++i)
+        for (int i=0; i<mBchResults.meta.maxArguments; ++i)
         {
             QList<QVariant> qvList;
             qvList.append(PlotArgumentType); qvList.append(i);
             ui->comboBoxZ->addItem("Argument " + QString::number(i+1), qvList);
         }
-        for (int i=0; i<bchResults.meta.maxTemplates; ++i)
+        for (int i=0; i<mBchResults.meta.maxTemplates; ++i)
         {
             QList<QVariant> qvList;
             qvList.append(PlotTemplateType); qvList.append(i);
             ui->comboBoxZ->addItem("Template " + QString::number(i+1), qvList);
         }
     }
+    
+    // Restore options (if possible)
+    if (prevChartType >= 0)
+    {
+        int chartIdx = ui->comboBoxType->findData(prevChartType);
+        if (chartIdx >= 0) {
+            ui->comboBoxType->setCurrentIndex(chartIdx);
+            updateComboBoxY();
+        }
+        // X
+        if (prevXType >= 0) {
+            for (int i=0; i<ui->comboBoxX->count(); ++i) {
+                if ((PlotParamType)ui->comboBoxX->itemData(i).toList()[0].toInt() == prevXType)
+                    ui->comboBoxX->setCurrentIndex(i);
+            }
+        }
+        // Y
+        int yIdx = ui->comboBoxY->findData(prevYType);
+        if (yIdx >= 0)
+            ui->comboBoxY->setCurrentIndex(yIdx);
+        // Z
+        if (prevZType >= 0) {
+            for (int i=0; i<ui->comboBoxZ->count(); ++i) {
+                if ((PlotParamType)ui->comboBoxZ->itemData(i).toList()[0].toInt() == prevZType)
+                    ui->comboBoxZ->setCurrentIndex(i);
+            }
+        }
+        ui->comboBoxZ->setEnabled(ui->comboBoxX->isEnabled()
+            && (prevChartType == Chart3DBarsType || prevChartType == Chart3DSurfaceType)); // Any 3D charts
+    }
+    
+    // Reload
+    ui->checkBoxAutoReload->setEnabled(true);
+    ui->labelLastReload->setEnabled(true);
+    ui->pushButtonReload->setEnabled(true);
+    
+    QDateTime today = QDateTime::currentDateTime();
+    QTime now = today.time();
+    ui->labelLastReload->setText("(Last: " + now.toString() + ")");
 }
 
-
+// Slots
 static void updateItemParentsState(QTreeWidgetItem *item)
 {
     auto parent = item->parent();
@@ -375,9 +626,9 @@ static QVector<int> getSelectedBenchmarks(const QTreeWidget *tree)
         }
         else
         {
-            for (int i=0; i<topItem->childCount(); ++i)
+            for (int j=0; j<topItem->childCount(); ++j)
             {
-                QTreeWidgetItem *midItem = topItem->child(i);
+                QTreeWidgetItem *midItem = topItem->child(j);
                 if (midItem->childCount() <= 0)
                 {
                     if (midItem->checkState(0) == Qt::Checked)
@@ -385,9 +636,9 @@ static QVector<int> getSelectedBenchmarks(const QTreeWidget *tree)
                 }
                 else
                 {
-                    for (int j=0; j<midItem->childCount(); ++j)
+                    for (int k=0; k<midItem->childCount(); ++k)
                     {
-                        QTreeWidgetItem *lowItem = midItem->child(j);
+                        QTreeWidgetItem *lowItem = midItem->child(k);
                         if (lowItem->checkState(0) == Qt::Checked)
                             resIdxs.append( lowItem->data(0, Qt::UserRole).toInt() );
                     }
@@ -409,7 +660,7 @@ void ResultSelector::onComboTypeChanged(int /*index*/)
     else
         ui->comboBoxZ->setEnabled(false);
     
-    if (bchResults.meta.hasAggregate)
+    if (mBchResults.meta.hasAggregate)
         updateComboBoxY();
 }
 
@@ -449,22 +700,114 @@ void ResultSelector::onComboZChanged(int /*index*/)
     }
 }
 
+// Reload
+void ResultSelector::onAutoReload(const QString &path)
+{
+    QFileInfo fi(path);
+    if (fi.exists() && fi.isReadable() && fi.size() > 0)
+        onReloadClicked();
+    else
+        qWarning() << "Unable to auto-reload file: " << path;
+}
+
+void ResultSelector::updateReloadWatchList()
+{
+    if (ui->checkBoxAutoReload->isChecked())
+    {
+        if (!mWatcher.files().empty())
+            mWatcher.removePaths( mWatcher.files() );
+        
+        mWatcher.addPath(mOrigFilename);
+        for (const auto& addFilename : qAsConst(mAddFilenames))
+            mWatcher.addPath( addFilename.filename );
+    }
+}
+
+void ResultSelector::onCheckAutoReload(int state)
+{
+    if (state == Qt::Checked)
+    {
+        if (mWatcher.files().empty())
+        {
+            mWatcher.addPath(mOrigFilename);
+            for (const auto& addFilename : qAsConst(mAddFilenames))
+                mWatcher.addPath( addFilename.filename );
+        }
+    }
+    else
+    {
+        if (!mWatcher.files().empty())
+            mWatcher.removePaths( mWatcher.files() );
+    }
+}
+
+void ResultSelector::onReloadClicked()
+{
+    // Check original
+    if ( mOrigFilename.isEmpty() ) {
+        QMessageBox::warning(this, "Reload benchmark results", "No file to reload");
+        return;
+    }
+    if ( !QFile::exists(mOrigFilename) ) {
+        QMessageBox::warning(this, "Reload benchmark results",
+                             "File to reload does no exist:" + mOrigFilename);
+        return;
+    }
+    // Load original
+    QString errorMsg;
+    BenchResults newResults = ResultParser::parseJsonFile(mOrigFilename, errorMsg);
+    if (newResults.benchmarks.size() <= 0) {
+        QMessageBox::warning(this, "Reload benchmark results",
+                             "Error parsing file: " + mOrigFilename + "\n" + errorMsg);
+        return;
+    }
+    
+    // Load additionnals
+    for (const auto &addFile : qAsConst(mAddFilenames))
+    {
+        QString errorMsg;
+        BenchResults addResults = ResultParser::parseJsonFile(addFile.filename, errorMsg);
+        if (addResults.benchmarks.size() <= 0) {
+            QMessageBox::warning(this, "Reload benchmark results",
+                                 "Error parsing file: " + addFile.filename + "\n" + errorMsg);
+            return;
+        }
+        // Append / Overwrite
+        if (addFile.isAppend)
+            newResults.appendResults(addResults);
+        else
+            newResults.overwriteResults(addResults);
+    }
+    
+    // Replace & update
+    auto unselected = getUnselectedBenchmarks(ui->treeWidget, mBchResults);
+    mBchResults = newResults;
+    updateResults(true, unselected);
+    
+    // Update timestamp
+    QDateTime today = QDateTime::currentDateTime();
+    QTime now = today.time();
+    ui->labelLastReload->setText("(Last: " + now.toString() + ")");
+}
+
 // File
 void ResultSelector::onNewClicked()
 {
     QString fileName = QFileDialog::getOpenFileName(this,
-        tr("Open benchmark results"), "", tr("Benchmark results (*.json)"));
+        tr("Open benchmark results"), mWorkingDir, tr("Benchmark results (*.json)"));
     
     if ( !fileName.isEmpty() && QFile::exists(fileName) )
     {
-        BenchResults newResults = ResultParser::parseJsonFile(fileName);
+        QString errorMsg;
+        BenchResults newResults = ResultParser::parseJsonFile(fileName, errorMsg);
         if (newResults.benchmarks.size() <= 0) {
             QMessageBox::warning(this, "Open benchmark results",
-                                 "Error parsing file.\nSee console output for details.");
+                                 "Error parsing file: " + fileName + "\n" + errorMsg);
             return;
         }
         // Replace & upate
-        this->bchResults = newResults;
+        mBchResults = newResults;
+        ui->treeWidget->sortByColumn(-1, Qt::SortOrder::AscendingOrder); // reset sorting
         updateResults(true);
         
         // Update UI
@@ -476,106 +819,80 @@ void ResultSelector::onNewClicked()
         ui->pushButtonPlot->setEnabled(true);
         
         // Save for reload
-        origFilename = fileName;
-        addFilenames.clear();
+        mOrigFilename = fileName;
+        mAddFilenames.clear();
+        updateReloadWatchList();
         
         // Window title
         QFileInfo fileInfo(fileName);
-        this->setWindowTitle( fileInfo.fileName() );
+        this->setWindowTitle("JOMT - " +  fileInfo.fileName());
+        
+        mWorkingDir = fileInfo.absoluteDir().absolutePath();
     }
 }
 
 void ResultSelector::onAppendClicked()
 {
     QString fileName = QFileDialog::getOpenFileName(this,
-        tr("Append benchmark results"), "", tr("Benchmark results (*.json)"));
+        tr("Append benchmark results"), mWorkingDir, tr("Benchmark results (*.json)"));
     
     if ( !fileName.isEmpty() && QFile::exists(fileName) )
     {
-        BenchResults newResults = ResultParser::parseJsonFile(fileName);
+        QString errorMsg;
+        BenchResults newResults = ResultParser::parseJsonFile(fileName, errorMsg);
         if (newResults.benchmarks.size() <= 0) {
             QMessageBox::warning(this, "Open benchmark results",
-                                 "Error parsing file.\nSee console output for details.");
+                                 "Error parsing file: " + fileName + "\n" + errorMsg);
             return;
         }
         // Append & upate
-        this->bchResults.appendResults(newResults);
-        updateResults(true);
+        auto unselected = getUnselectedBenchmarks(ui->treeWidget, mBchResults);
+        mBchResults.appendResults(newResults);
+        updateResults(true, unselected);
         
         // Save for reload
-        addFilenames.append( {fileName, true} );
+        mAddFilenames.append( {fileName, true} );
+        updateReloadWatchList();
         
         // Window title
         if ( !this->windowTitle().endsWith(" + ...") )
             this->setWindowTitle( this->windowTitle() + " + ..." );
+        
+        QFileInfo fileInfo(fileName);
+        mWorkingDir = fileInfo.absoluteDir().absolutePath();
     }
 }
 
 void ResultSelector::onOverwriteClicked()
 {
     QString fileName = QFileDialog::getOpenFileName(this,
-        tr("Overwrite benchmark results"), "", tr("Benchmark results (*.json)"));
+        tr("Overwrite benchmark results"), mWorkingDir, tr("Benchmark results (*.json)"));
     
     if ( !fileName.isEmpty() && QFile::exists(fileName) )
     {
-        BenchResults newResults = ResultParser::parseJsonFile(fileName);
+        QString errorMsg;
+        BenchResults newResults = ResultParser::parseJsonFile(fileName, errorMsg);
         if (newResults.benchmarks.size() <= 0) {
             QMessageBox::warning(this, "Open benchmark results",
-                                 "Error parsing file.\nSee console output for details.");
+                                 "Error parsing file: " + fileName + "\n" + errorMsg);
             return;
         }
         // Overwrite & upate
-        this->bchResults.overwriteResults(newResults);
-        updateResults(true);
+        auto unselected = getUnselectedBenchmarks(ui->treeWidget, mBchResults);
+        mBchResults.overwriteResults(newResults);
+        updateResults(true, unselected);
         
         // Save for reload
-        addFilenames.append( {fileName, false} );
+        mAddFilenames.append( {fileName, false} );
+        updateReloadWatchList();
         
         // Window title
         if ( !this->windowTitle().endsWith(" + ...") )
             this->setWindowTitle( this->windowTitle() + " + ..." );
+        
+        QFileInfo fileInfo(fileName);
+        mWorkingDir = fileInfo.absoluteDir().absolutePath();
     }
-}
-
-void ResultSelector::onReloadClicked()
-{
-    // Check original
-    if ( origFilename.isEmpty() ) {
-        QMessageBox::warning(this, "Reload benchmark results", "No file to reload");
-        return;
-    }
-    if ( !QFile::exists(origFilename) ) {
-        QMessageBox::warning(this, "Reload benchmark results",
-                             "File to reload does no exist:" + origFilename);
-        return;
-    }
-    // Load original
-    BenchResults newResults = ResultParser::parseJsonFile(origFilename);
-    if (newResults.benchmarks.size() <= 0) {
-        QMessageBox::warning(this, "Reload benchmark results", "Error parsing file:" + origFilename
-                             + "\nSee console output for details.");
-        return;
-    }
-    
-    // Load additionnals
-    for (const auto &addFile : addFilenames)
-    {
-        BenchResults addResults = ResultParser::parseJsonFile(addFile.filename);
-        if (addResults.benchmarks.size() <= 0) {
-            QMessageBox::warning(this, "Reload benchmark results", "Error parsing file:"
-                                 + addFile.filename + "\nSee console output for details.");
-            return;
-        }
-        // Append / Overwrite
-        if (addFile.isAppend)
-            newResults.appendResults(addResults);
-        else
-            newResults.overwriteResults(addResults);
-    }
-    
-    // Replace & update
-    this->bchResults = newResults;
-    updateResults(true);
 }
 
 // Selection
@@ -631,44 +948,66 @@ void ResultSelector::onPlotClicked()
 
     //
     // Call plotter
+    bool is3D = false;
+    QWidget* widget = nullptr;
     switch (plotParams.type)
     {
         case ChartLineType:
         case ChartSplineType:
         {
-            PlotterLineChart *plotLines = new PlotterLineChart(bchResults, bchIdxs,
-                                                               plotParams, this->windowTitle());
-            plotLines->show();
+            widget = new PlotterLineChart(mBchResults, bchIdxs,
+                                          plotParams, mOrigFilename, mAddFilenames);
             break;
         }
         case ChartBarType:
         case ChartHBarType:
         {
-            PlotterBarChart *plotBars = new PlotterBarChart(bchResults, bchIdxs,
-                                                             plotParams, this->windowTitle());
-            plotBars->show();
+            widget = new PlotterBarChart(mBchResults, bchIdxs,
+                                         plotParams, mOrigFilename, mAddFilenames);
             break;
         }
         case ChartBoxType:
         {
-            PlotterBoxChart *plotBoxes = new PlotterBoxChart(bchResults, bchIdxs,
-                                                             plotParams, this->windowTitle());
-            plotBoxes->show();
+            widget = new PlotterBoxChart(mBchResults, bchIdxs,
+                                         plotParams, mOrigFilename, mAddFilenames);
             break;
         }
         case Chart3DBarsType:
         {
-            Plotter3DBars *plot3DBars = new Plotter3DBars(bchResults, bchIdxs,
-                                                          plotParams, this->windowTitle());
-            plot3DBars->show();
+            widget = new Plotter3DBars(mBchResults, bchIdxs,
+                                       plotParams, mOrigFilename, mAddFilenames);
+            is3D = true;
             break;
         }
         case Chart3DSurfaceType:
         {
-            Plotter3DSurface *plot3DSfce = new Plotter3DSurface(bchResults, bchIdxs,
-                                                                plotParams, this->windowTitle());
-            plot3DSfce->show();
+            widget = new Plotter3DSurface(mBchResults, bchIdxs,
+                                          plotParams, mOrigFilename, mAddFilenames);
+            is3D = true;
             break;
         }
     }
+    
+    if (widget)
+    {
+        // Default size
+        QSize newSize = widget->size();
+        QSize screenSize =  QGuiApplication::primaryScreen()->size();
+        float scale = screenSize.height() * 0.375f / newSize.height();
+        float ratio = 16.f/9.f;
+        float h3DScale = 1.15f;
+        if (scale > 1.f) {
+            newSize *= scale;
+            ratio = 2.3f;
+            h3DScale = 1.5f;
+        }
+        newSize.setWidth(newSize.height() * ratio);
+        if (is3D)
+            newSize.setHeight(newSize.height() * h3DScale);
+        widget->resize(newSize.width(), newSize.height());
+        
+        widget->show();
+    }
+    else
+        qWarning() << "Unable to instantiate plot widget";
 }

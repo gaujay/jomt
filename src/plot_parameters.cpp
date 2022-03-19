@@ -13,64 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef PLOT_PARAMETERS_H
-#define PLOT_PARAMETERS_H
+#include "plot_parameters.h"
 
-#include "benchmark_results.h"
+#include <algorithm>
 
-
-// Chart types
-enum PlotChartType {
-    ChartLineType,
-    ChartSplineType,
-    ChartBarType,
-    ChartHBarType,
-    ChartBoxType,
-    Chart3DBarsType,
-    Chart3DSurfaceType
-};
-
-// Parameter types
-enum PlotParamType {
-    PlotEmptyType,
-    PlotArgumentType,
-    PlotTemplateType
-};
-
-// Y-value types
-enum PlotValueType {
-    CpuTimeType,  CpuTimeMinType,  CpuTimeMeanType,  CpuTimeMedianType,
-    RealTimeType, RealTimeMinType, RealTimeMeanType, RealTimeMedianType,
-    IterationsType,
-    BytesType, BytesMinType, BytesMeanType, BytesMedianType,
-    ItemsType, ItemsMinType, ItemsMeanType, ItemsMedianType
-};
-
-// Y-value stats
-struct BenchYStats {
-    double min, max;
-    double median;
-    double lowQuart, uppQuart;
-};
+const char* config_folder = "jomtSettings/";
 
 
-//
-// Plot parameters
-struct PlotParams {
-    PlotChartType type;
-    PlotParamType xType;
-    int xIdx;
-    PlotValueType yType;
-    PlotParamType zType;
-    int zIdx;
-};
-
-
-/*
- * Static functions
- */
-// Get Y-value according to type
-static double getYPlotValue(const BenchData &bchData, PlotValueType yType)
+double getYPlotValue(const BenchData &bchData, PlotValueType yType)
 {
     switch (yType)
     {
@@ -87,6 +37,12 @@ static double getYPlotValue(const BenchData &bchData, PlotValueType yType)
         case CpuTimeMedianType: {
             return bchData.median_cpu;
         }
+        case CpuTimeStddevType: {
+            return bchData.stddev_cpu;
+        }
+        case CpuTimeCvType: {
+            return bchData.cv_cpu;
+        }
         
         // Real time
         case RealTimeType: {
@@ -100,6 +56,12 @@ static double getYPlotValue(const BenchData &bchData, PlotValueType yType)
         }
         case RealTimeMedianType: {
             return bchData.median_real;
+        }
+        case RealTimeStddevType: {
+            return bchData.stddev_real;
+        }
+        case RealTimeCvType: {
+            return bchData.cv_real;
         }
         
         // Iterations
@@ -120,6 +82,12 @@ static double getYPlotValue(const BenchData &bchData, PlotValueType yType)
         case BytesMedianType: {
             return bchData.median_kbytes;
         }
+        case BytesStddevType: {
+            return bchData.stddev_kbytes;
+        }
+        case BytesCvType: {
+            return bchData.cv_kbytes;
+        }
         
         // Items/s
         case ItemsType: {
@@ -134,42 +102,62 @@ static double getYPlotValue(const BenchData &bchData, PlotValueType yType)
         case ItemsMedianType: {
             return bchData.median_kitems;
         }
+        case ItemsStddevType: {
+            return bchData.stddev_kitems;
+        }
+        case ItemsCvType: {
+            return bchData.cv_kitems;
+        }
     }
     
     return -1;
 }
 
-// Get Y-name according to type
-static QString getYPlotName(PlotValueType yType)
+QString getYPlotName(PlotValueType yType, QString timeUnit)
 {
+    if (!timeUnit.isEmpty())
+        timeUnit = " (" + timeUnit + ")";
+    
     switch (yType)
     {
         // CPU time
         case CpuTimeType: {
-            return "CPU time (us)";
+            return "CPU time" + timeUnit;
         }
         case CpuTimeMinType: {
-            return "CPU min time (us)";
+            return "CPU min time" + timeUnit;
         }
         case CpuTimeMeanType: {
-            return "CPU mean time (us)";
+            return "CPU mean time" + timeUnit;
         }
         case CpuTimeMedianType: {
-            return "CPU median time (us)";
+            return "CPU median time" + timeUnit;
+        }
+        case CpuTimeStddevType: {
+            return "CPU stddev time" + timeUnit;
+        }
+        case CpuTimeCvType: {
+            return "CPU cv (%)";
         }
         
         // Real time
         case RealTimeType: {
-            return "Real time (us)";
+            return "Real time" + timeUnit;
         }
         case RealTimeMinType: {
-            return "Real min time (us)";
+            return "Real min time" + timeUnit;
         }
         case RealTimeMeanType: {
-            return "Real mean time (us)";
+            return "Real mean time" + timeUnit;
         }
         case RealTimeMedianType: {
-            return "Real median time (us)";
+            return "Real median time" + timeUnit;
+        }
+        case RealTimeStddevType: {
+            return "Real stddev time" + timeUnit;
+        }
+        case RealTimeCvType: {
+            return "Real cv (%)";
         }
         
         // Iterations
@@ -190,6 +178,12 @@ static QString getYPlotName(PlotValueType yType)
         case BytesMedianType: {
             return "Bytes/s median (k)";
         }
+        case BytesStddevType: {
+            return "Bytes/s stddev (k)";
+        }
+        case BytesCvType: {
+            return "Bytes/s cv (%)";
+        }
         
         // Items/s
         case ItemsType: {
@@ -204,13 +198,18 @@ static QString getYPlotName(PlotValueType yType)
         case ItemsMedianType: {
             return "Items/s median (k)";
         }
+        case ItemsStddevType: {
+            return "Items/s stddev (k)";
+        }
+        case ItemsCvType: {
+            return "Items/s cv (%)";
+        }
     }
     
     return "Unknown";
 }
 
-// Convert time value to micro-seconds
-static double normalizeTimeUs(const BenchData &bchData, double value)
+double normalizeTimeUs(const BenchData &bchData, double value)
 {
     double timeFactor = 1.;
     if      (bchData.time_unit == "ns") timeFactor = 0.001;
@@ -218,8 +217,19 @@ static double normalizeTimeUs(const BenchData &bchData, double value)
     return value * timeFactor;
 }
 
-// Find median in vector subpart
-static double findMedian(QVector<double> sorted, int begin, int end)
+bool isYTimeBased(PlotValueType yType)
+{
+    if (   yType != PlotValueType::RealTimeType       && yType != PlotValueType::CpuTimeType
+        && yType != PlotValueType::RealTimeMinType    && yType != PlotValueType::CpuTimeMinType
+        && yType != PlotValueType::RealTimeMeanType   && yType != PlotValueType::CpuTimeMeanType
+        && yType != PlotValueType::RealTimeMedianType && yType != PlotValueType::CpuTimeMedianType
+        && yType != PlotValueType::RealTimeStddevType && yType != PlotValueType::CpuTimeStddevType )
+        return false;
+    
+    return true;
+}
+
+double findMedian(QVector<double> sorted, int begin, int end)
 {
     int count = end - begin;
     if (count <= 0) return 0.;
@@ -233,8 +243,7 @@ static double findMedian(QVector<double> sorted, int begin, int end)
     }
 }
 
-// Get Y-value statistics (for Box chart)
-static BenchYStats getYPlotStats(BenchData &bchData, PlotValueType yType)
+BenchYStats getYPlotStats(BenchData &bchData, PlotValueType yType)
 {
     BenchYStats statRes;
     
@@ -253,13 +262,13 @@ static BenchYStats getYPlotStats(BenchData &bchData, PlotValueType yType)
     {
         // CPU time
         case CpuTimeType:
-        case CpuTimeMinType: case CpuTimeMeanType: case CpuTimeMedianType:
+        case CpuTimeMinType: case CpuTimeMeanType: case CpuTimeMedianType: case CpuTimeStddevType:
         {
             statRes.min    = bchData.min_cpu;
             statRes.max    = bchData.max_cpu;
             statRes.median = bchData.median_cpu;
             
-            qSort(bchData.cpu_time);
+            std::sort(bchData.cpu_time.begin(), bchData.cpu_time.end());
             int count = bchData.cpu_time.count();
             statRes.lowQuart = normalizeTimeUs(bchData, findMedian(bchData.cpu_time, 0, count/2));
             statRes.uppQuart = normalizeTimeUs(bchData, findMedian(bchData.cpu_time, count/2 + (count%2), count));
@@ -268,13 +277,13 @@ static BenchYStats getYPlotStats(BenchData &bchData, PlotValueType yType)
         }
         // Real time
         case RealTimeType:
-        case RealTimeMinType: case RealTimeMeanType: case RealTimeMedianType:
+        case RealTimeMinType: case RealTimeMeanType: case RealTimeMedianType: case RealTimeStddevType:
         {
             statRes.min    = bchData.min_real;
             statRes.max    = bchData.max_real;
             statRes.median = bchData.median_real;
             
-            qSort(bchData.real_time);
+            std::sort(bchData.real_time.begin(), bchData.real_time.end());
             int count = bchData.real_time.count();
             statRes.lowQuart = normalizeTimeUs(bchData, findMedian(bchData.real_time, 0, count/2));
             statRes.uppQuart = normalizeTimeUs(bchData, findMedian(bchData.real_time, count/2 + (count%2), count));
@@ -283,13 +292,13 @@ static BenchYStats getYPlotStats(BenchData &bchData, PlotValueType yType)
         }
         // Bytes/s
         case BytesType:
-        case BytesMinType: case BytesMeanType: case BytesMedianType:
+        case BytesMinType: case BytesMeanType: case BytesMedianType: case BytesStddevType:
         {
             statRes.min    = bchData.min_kbytes;
             statRes.max    = bchData.max_kbytes;
             statRes.median = bchData.median_kbytes;
             
-            qSort(bchData.kbytes_sec);
+            std::sort(bchData.kbytes_sec.begin(), bchData.kbytes_sec.end());
             int count = bchData.kbytes_sec.count();
             statRes.lowQuart = findMedian(bchData.kbytes_sec, 0, count/2);
             statRes.uppQuart = findMedian(bchData.kbytes_sec, count/2 + (count%2), count);
@@ -298,13 +307,13 @@ static BenchYStats getYPlotStats(BenchData &bchData, PlotValueType yType)
         }
         // Items/s
         case ItemsType:
-        case ItemsMinType: case ItemsMeanType: case ItemsMedianType:
+        case ItemsMinType: case ItemsMeanType: case ItemsMedianType: case ItemsStddevType:
         {
             statRes.min    = bchData.min_kitems;
             statRes.max    = bchData.max_kitems;
             statRes.median = bchData.median_kitems;
             
-            qSort(bchData.kitems_sec);
+            std::sort(bchData.kitems_sec.begin(), bchData.kitems_sec.end());
             int count = bchData.kitems_sec.count();
             statRes.lowQuart = findMedian(bchData.kitems_sec, 0, count/2);
             statRes.uppQuart = findMedian(bchData.kitems_sec, count/2 + (count%2), count);
@@ -326,8 +335,7 @@ static BenchYStats getYPlotStats(BenchData &bchData, PlotValueType yType)
     return statRes;
 }
 
-// Compare first common elements between string lists
-static bool commonPartEqual(const QStringList &listA, const QStringList &listB)
+bool commonPartEqual(const QStringList &listA, const QStringList &listB)
 {
     bool isEqual = true;
     int maxIdx = std::min(listA.size(), listB.size());
@@ -339,5 +347,18 @@ static bool commonPartEqual(const QStringList &listA, const QStringList &listB)
     return isEqual;
 }
 
-
-#endif // PLOT_PARAMETERS_H
+bool sameResultsFiles(const QString &fileA, const QString &fileB,
+                      const QVector<FileReload> &addFilesA, const QVector<FileReload> &addFilesB)
+{
+    if (fileA != fileB)
+        return false;
+    if (addFilesA.size() != addFilesB.size())
+        return false;
+    
+    for (int i=0; i<addFilesA.size(); ++i) {
+        if ( !addFilesB.contains(addFilesA[i]) )
+            return false;
+    }
+    
+    return true;
+}

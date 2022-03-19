@@ -19,13 +19,20 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
-#include <QMap>
-#include <QDebug>
 
 
 /*
  * Structures
  */
+// Additional file
+struct FileReload {
+    QString filename;
+    bool isAppend;
+};
+inline bool operator==(const FileReload& lhs, const FileReload& rhs) {
+    return (lhs.isAppend == rhs.isAppend && lhs.filename == rhs.filename);
+}
+
 // Context Cache
 struct BenchCache {
     QString type;
@@ -49,31 +56,31 @@ struct BenchContext {
 
 // Benchmark Data
 struct BenchData {
-    BenchData() : hasAggregate(false), kbytes_sec_dflt(0), kitems_sec_dflt(0) {}
-    
     // Iterations
     QString name;
     QString run_name;
     QString run_type;
-    int repetitions;
+    int repetitions = 0;
     int repetition_index;
     int threads;
     int iterations;
+    QString time_unit;
     QVector<double> real_time; // One per iteration
     QVector<double> cpu_time;
-    QString time_unit;
     QVector<double> kbytes_sec;
     QVector<double> kitems_sec;
     
-    // Aggregate (all durations in us)
-    bool hasAggregate;
+    // Aggregate (all durations in us/cv in %)
+    bool hasAggregate = false;
     double min_real, min_cpu, min_kbytes, min_kitems;
     double max_real, max_cpu, max_kbytes, max_kitems;
     double mean_real, mean_cpu, mean_kbytes, mean_kitems;
     double median_real, median_cpu, median_kbytes, median_kitems;
     double stddev_real, stddev_cpu, stddev_kbytes, stddev_kitems;
+    double cv_real = -1, cv_cpu = -1, cv_kbytes = -1, cv_kitems = -1;
     
     // Meta
+    // Note: JOMT format = "JOMT_FamilyName_ContainerName<templates>/params
     QString base_name;      // run_name without template/param/JOMT prefix
     QString family;         // family/algo name (empty if not JOMT)
     QString container;      // container name (empty if not JOMT)
@@ -82,7 +89,7 @@ struct BenchData {
     
     // Default (use associated 'min' values if has aggregate)
     double real_time_us, cpu_time_us;   // in us
-    double kbytes_sec_dflt, kitems_sec_dflt;
+    double kbytes_sec_dflt = 0, kitems_sec_dflt = 0;
 };
 
 // Benchmark Subset
@@ -99,13 +106,11 @@ struct BenchSubset {
 
 // Benchmark Meta
 struct BenchMeta {
-    BenchMeta() : hasAggregate(false), hasBytesSec(false), hasItemsSec(false)
-                , maxArguments(0), maxTemplates(0) {}
-    
     // Data
-    bool hasAggregate;
-    bool hasBytesSec, hasItemsSec;
-    int maxArguments, maxTemplates;
+    bool hasAggregate = false, onlyAggregate = true, hasCv = false;
+    bool hasBytesSec = false, hasItemsSec = false;
+    int maxArguments = 0, maxTemplates = 0;
+    QString time_unit;  // if same for all, otherwise "us" as default
 };
 
 //
@@ -114,10 +119,9 @@ struct BenchResults {
     /*
      * Data
      */
+    BenchMeta meta;
     BenchContext context;
     QVector<BenchData> benchmarks;
-    BenchMeta meta;
-    //Note: JOMT format = "JOMT_FamilyName_ContainerName<templates>/params (Family = Algo)
     
     
     /*
@@ -190,7 +194,8 @@ struct BenchResults {
     QVector<BenchSubset> groupParam(bool isArgument, const QVector<int> &subset,
                                     int idx, const QString &glyph) const;
     
-    //
+    // Get Benchmark full name
+    QString getBenchName(int index) const;
     // Get Argument/Template name
     QString getParamName(bool isArgument, int benchIdx, int paramIdx) const;
     

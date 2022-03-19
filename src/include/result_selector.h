@@ -18,7 +18,11 @@
 
 #include "benchmark_results.h"
 
+#include <QSet>
+#include <QVector>
+#include <QString>
 #include <QWidget>
+#include <QFileSystemWatcher>
 
 namespace Ui {
 class ResultSelector;
@@ -37,8 +41,10 @@ public:
     
 private:
     void connectUI();
+    void loadConfig();
+    void saveConfig();
     void updateComboBoxY();
-    void updateResults(bool clear = false);
+    void updateResults(bool clear, const QSet<QString> unselected = {});
     
 public slots:
     void onItemChanged(QTreeWidgetItem *item, int column);
@@ -47,10 +53,14 @@ public slots:
     void onComboXChanged(int index);
     void onComboZChanged(int index);
     
+    void onAutoReload(const QString &path);
+    void updateReloadWatchList();
+    void onCheckAutoReload(int state);
+    void onReloadClicked();
+    
     void onNewClicked();
     void onAppendClicked();
     void onOverwriteClicked();
-    void onReloadClicked();
     
     void onSelectAllClicked();
     void onSelectNoneClicked();
@@ -59,15 +69,14 @@ public slots:
     
 private:
     Ui::ResultSelector *ui;
-    BenchResults bchResults;
     
-    struct FileReload {
-        QString filename;
-        bool isAppend;
-    };
+    BenchResults mBchResults;
+    QString mOrigFilename;
+    QVector<FileReload> mAddFilenames;
     
-    QString origFilename;
-    QVector<FileReload> addFilenames;
+    QString mWorkingDir;
+    QFileSystemWatcher mWatcher;
 };
+
 
 #endif // RESULT_SELECTOR_H

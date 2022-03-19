@@ -16,7 +16,13 @@
 #ifndef PLOTTER_3DBARS_H
 #define PLOTTER_3DBARS_H
 
+#include "plot_parameters.h"
+#include "series_dialog.h"
+
 #include <QWidget>
+#include <QVector>
+#include <QString>
+#include <QFileSystemWatcher>
 
 namespace Ui {
 class Plotter3DBars;
@@ -24,8 +30,8 @@ class Plotter3DBars;
 namespace QtDataVisualization {
 class Q3DBars;
 }
-class BenchResults;
-class PlotParams;
+struct BenchResults;
+struct FileReload;
 
 
 class Plotter3DBars : public QWidget
@@ -35,8 +41,15 @@ class Plotter3DBars : public QWidget
 public:
     explicit Plotter3DBars(const BenchResults &bchResults, const QVector<int> &bchIdxs,
                            const PlotParams &plotParams, const QString &filename,
-                           QWidget *parent = nullptr);
+                           const QVector<FileReload>& addFilenames, QWidget *parent = nullptr);
     ~Plotter3DBars();
+
+private:
+    void connectUI();
+    void setupChart(const BenchResults &bchResults, const QVector<int> &bchIdxs, const PlotParams &plotParams, bool init = true);
+    void setupOptions(bool init = true);
+    void loadConfig(bool init);
+    void saveConfig();
 
 public slots:
     void onComboThemeChanged(int index);
@@ -46,6 +59,8 @@ public slots:
     void onSpinFloorChanged(double d);
     void onSpinSpaceXChanged(double d);
     void onSpinSpaceZChanged(double d);
+    void onSeriesEditClicked();
+    void onComboTimeUnitChanged(int index);
 
     void onComboAxisChanged(int index);
     void onCheckAxisRotate(int state);
@@ -53,6 +68,7 @@ public slots:
     void onCheckLog(int state);
     void onSpinLogBaseChanged(int i);
     void onEditTitleChanged(const QString& text);
+    void onEditTitleChanged2(const QString& text, int iAxis);
     void onEditFormatChanged(const QString& text);
     void onSpinMinChanged(double d);
     void onSpinMaxChanged(double d);
@@ -61,12 +77,24 @@ public slots:
     void onSpinTicksChanged(int i);
     void onSpinMTicksChanged(int i);
 
+    void onCheckAutoReload(int state);
+    void onAutoReload(const QString &path);
+    void onReloadClicked();
     void onSnapshotClicked();
     
     
 private:
     struct AxisParam {
-        AxisParam() : rotate(false), title(false), minIdx(0) {}
+        AxisParam() : rotate(false), title(false), minIdx(0), maxIdx(0) {}
+        void reset()
+        {
+            rotate = false;
+            title = false;
+            minIdx = 0;
+            maxIdx = 0;
+            titleText.clear();
+            range.clear();
+        }
         
         bool rotate, title;
         QString titleText;
@@ -77,7 +105,17 @@ private:
     
     Ui::Plotter3DBars *ui;
     QtDataVisualization::Q3DBars *mBars;
-    AxisParam axesParams[3];
+    
+    QVector<int> mBenchIdxs;
+    const PlotParams mPlotParams;
+    const QString mOrigFilename;
+    const QVector<FileReload> mAddFilenames;
+    const bool mAllIndexes;
+    
+    QFileSystemWatcher mWatcher;
+    SeriesMapping mSeriesMapping;
+    double mCurrentTimeFactor;      // from us
+    AxisParam mAxesParams[3];
     QVector<QLinearGradient> mGrads;
     bool mIgnoreEvents = false;
 };

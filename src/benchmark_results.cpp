@@ -15,7 +15,10 @@
 
 #include "benchmark_results.h"
 
+#include <QMap>
+
 #define BCHRES_DEBUG false
+#include <QDebug>
 
 
 /**************************************************************************************************
@@ -218,6 +221,9 @@ QVector<BenchSubset> BenchResults::segmentFamilies(const QVector<int> &subset) c
     
     for (int idx : subset)
     {
+        if (idx >= benchmarks.size())
+            continue; //No longer exists
+        
         const BenchData &bchData = benchmarks[idx];
         if ( !famMap.contains(bchData.family) )
         {
@@ -227,7 +233,7 @@ QVector<BenchSubset> BenchResults::segmentFamilies(const QVector<int> &subset) c
         // Append to associated entry
         famRes[famMap[bchData.family]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : famRes)
+    for (const BenchSubset& sub : qAsConst(famRes))
         if (BCHRES_DEBUG) qDebug() << "familySub:" << sub.name << "->" << sub.idxs;
     
     return famRes;
@@ -242,6 +248,9 @@ QVector<BenchSubset> BenchResults::segmentContainers(const QVector<int> &subset)
     
     for (int idx : subset)
     {
+        if (idx >= benchmarks.size())
+            continue; //No longer exists
+        
         const BenchData &bchData = benchmarks[idx];
         if ( !ctnMap.contains(bchData.container) )
         {
@@ -251,7 +260,7 @@ QVector<BenchSubset> BenchResults::segmentContainers(const QVector<int> &subset)
         // Append to associated entry
         ctnRes[ctnMap[bchData.container]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : ctnRes)
+    for (const BenchSubset& sub : qAsConst(ctnRes))
         if (BCHRES_DEBUG) qDebug() << "containerSub:" << sub.name << "->" << sub.idxs;
     
     return ctnRes;
@@ -289,6 +298,9 @@ QVector<BenchSubset> BenchResults::segmentBaseNames(const QVector<int> &subset) 
     
     for (int idx : subset)
     {
+        if (idx >= benchmarks.size())
+            continue; //No longer exists
+        
         const BenchData &bchData = benchmarks[idx];
         if ( !nameMap.contains(bchData.base_name) )
         {
@@ -298,7 +310,7 @@ QVector<BenchSubset> BenchResults::segmentBaseNames(const QVector<int> &subset) 
         // Append to associated entry
         nameRes[nameMap[bchData.base_name]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : nameRes)
+    for (const BenchSubset& sub : qAsConst(nameRes))
         if (BCHRES_DEBUG) qDebug() << "nameSub:" << sub.name << "->" << sub.idxs;
     
     return nameRes;
@@ -314,6 +326,9 @@ QVector<BenchSubset> BenchResults::segment2DNames(const QVector<int> &subset,
     
     for (int idx : subset)
     {
+        if (idx >= benchmarks.size())
+            continue; //No longer exists
+        
         const BenchData &bchData = benchmarks[idx];
         QString difName;
         if (isArg1) {
@@ -337,7 +352,7 @@ QVector<BenchSubset> BenchResults::segment2DNames(const QVector<int> &subset,
         // Append to associated entry
         nameRes[nameMap[difName]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : nameRes)
+    for (const BenchSubset& sub : qAsConst(nameRes))
         if (BCHRES_DEBUG) qDebug() << "nameSub:" << sub.name << "->" << sub.idxs;
     
     return nameRes;
@@ -352,6 +367,9 @@ QVector<BenchSubset> BenchResults::segmentArguments(const QVector<int> &subset, 
     
     for (int idx : subset)
     {
+        if (idx >= benchmarks.size())
+            continue; //No longer exists
+        
         const BenchData &bchData = benchmarks[idx];
         if (bchData.arguments.size() <= argIdx) continue;
         
@@ -364,7 +382,7 @@ QVector<BenchSubset> BenchResults::segmentArguments(const QVector<int> &subset, 
         // Append to associated entry
         argRes[argMap[param]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : argRes)
+    for (const BenchSubset& sub : qAsConst(argRes))
         if (BCHRES_DEBUG) qDebug() << "argSub:" << sub.name << "->" << sub.idxs;
     
     return argRes;
@@ -379,6 +397,9 @@ QVector<BenchSubset> BenchResults::segmentTemplates(const QVector<int> &subset, 
     
     for (int idx : subset)
     {
+        if (idx >= benchmarks.size())
+            continue; //No longer exists
+        
         const BenchData &bchData = benchmarks[idx];
         if (bchData.templates.size() <= tpltIdx) continue;
         
@@ -391,7 +412,7 @@ QVector<BenchSubset> BenchResults::segmentTemplates(const QVector<int> &subset, 
         // Append to associated entry
         tpltRes[tpltMap[param]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : tpltRes)
+    for (const BenchSubset& sub : qAsConst(tpltRes))
         if (BCHRES_DEBUG) qDebug() << "templateSub:" << sub.name << "->" << sub.idxs;
     
     return tpltRes;
@@ -418,10 +439,14 @@ QVector<BenchSubset> BenchResults::groupArgument(const QVector<int> &subset,
     
     for (int idx : subset)
     {
-        const BenchData &bchData = benchmarks[idx];
+        if (idx >= benchmarks.size())
+            continue; //No longer exists
         
+        const BenchData &bchData = benchmarks[idx];
         const QString &bchID = extractArgument(bchData, argIdx, argGlyph);
-        if ( bchID.isEmpty() ) continue; //Ignore if incompatible
+        if ( bchID.isEmpty() )
+            continue; //Ignore if incompatible
+        
         if ( !argMap.contains(bchID) )
         {
             argMap[bchID] = argRes.size(); //Add ID to map
@@ -430,7 +455,7 @@ QVector<BenchSubset> BenchResults::groupArgument(const QVector<int> &subset,
         // Append to associated entry
         argRes[argMap[bchID]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : argRes)
+    for (const BenchSubset& sub : qAsConst(argRes))
         if (BCHRES_DEBUG) qDebug() << "argGSub:" << sub.name << "->" << sub.idxs;
     
     return argRes;
@@ -446,10 +471,14 @@ QVector<BenchSubset> BenchResults::groupTemplate(const QVector<int> &subset,
     
     for (int idx : subset)
     {
+        if (idx >= benchmarks.size())
+            continue; //No longer exists
+
         const BenchData &bchData = benchmarks[idx];
-        
         const QString &bchID = extractTemplate(bchData, tpltIdx, tpltGlyph);
-        if ( bchID.isEmpty() ) continue; //Ignore if incompatible
+        if ( bchID.isEmpty() )
+            continue; //Ignore if incompatible
+        
         if ( !tpltMap.contains(bchID) )
         {
             tpltMap[bchID] = tpltRes.size(); //Add ID to map
@@ -458,7 +487,7 @@ QVector<BenchSubset> BenchResults::groupTemplate(const QVector<int> &subset,
         // Append to associated entry
         tpltRes[tpltMap[bchID]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : tpltRes)
+    for (const BenchSubset& sub : qAsConst(tpltRes))
         if (BCHRES_DEBUG) qDebug() << "tpltGSub:" << sub.name << "->" << sub.idxs;
     
     return tpltRes;
@@ -478,9 +507,16 @@ QVector<BenchSubset> BenchResults::groupParam(bool isArgument, const QVector<int
 /**************************************************************************************************/
 /**************************************************************************************************/
 
+QString BenchResults::getBenchName(int index) const
+{
+    Q_ASSERT(index >= 0 && index < benchmarks.size());
+    return benchmarks[index].name;
+}
+
 QString BenchResults::getParamName(bool isArgument, int benchIdx, int paramIdx) const
 {
-    if (paramIdx < 0) return "";
+    if (paramIdx < 0)
+        return "";
     
     // Argument
     if (isArgument) {
@@ -498,7 +534,7 @@ QString BenchResults::getParamName(bool isArgument, int benchIdx, int paramIdx) 
 void BenchResults::appendResults(const BenchResults &bchRes)
 {
     // Benchmarks
-    for (const auto& newBench : bchRes.benchmarks)
+    for (const auto& newBench : qAsConst(bchRes.benchmarks))
     {
         // Rename if needed
         QString tempName = newBench.name;
@@ -535,10 +571,14 @@ void BenchResults::appendResults(const BenchResults &bchRes)
         this->meta.maxArguments = bchRes.meta.maxArguments;
     if (this->meta.maxTemplates < bchRes.meta.maxTemplates)
         this->meta.maxTemplates = bchRes.meta.maxTemplates;
+    if (this->meta.time_unit != bchRes.meta.time_unit)
+        this->meta.time_unit = "us";
     
-    this->meta.hasAggregate |= bchRes.meta.hasAggregate;
-    this->meta.hasBytesSec  |= bchRes.meta.hasBytesSec;
-    this->meta.hasItemsSec  |= bchRes.meta.hasItemsSec;
+    this->meta.hasAggregate  |= bchRes.meta.hasAggregate;
+    this->meta.onlyAggregate &= bchRes.meta.onlyAggregate;
+    this->meta.hasCv         |= bchRes.meta.hasCv;
+    this->meta.hasBytesSec   |= bchRes.meta.hasBytesSec;
+    this->meta.hasItemsSec   |= bchRes.meta.hasItemsSec;
 }
 
 /**************************************************************************************************/
@@ -546,7 +586,7 @@ void BenchResults::appendResults(const BenchResults &bchRes)
 void BenchResults::overwriteResults(const BenchResults &bchRes)
 {
     // Benchmarks
-    for (const auto& newBench : bchRes.benchmarks)
+    for (const auto& newBench : qAsConst(bchRes.benchmarks))
     {
         int idx = -1;
         for (int i=0; idx<0 && i<this->benchmarks.size(); ++i)
@@ -563,10 +603,14 @@ void BenchResults::overwriteResults(const BenchResults &bchRes)
         this->meta.maxArguments = bchRes.meta.maxArguments;
     if (this->meta.maxTemplates < bchRes.meta.maxTemplates)
         this->meta.maxTemplates = bchRes.meta.maxTemplates;
+    if (this->meta.time_unit != bchRes.meta.time_unit)
+        this->meta.time_unit = "us";
     
-    this->meta.hasAggregate |= bchRes.meta.hasAggregate;
-    this->meta.hasBytesSec  |= bchRes.meta.hasBytesSec;
-    this->meta.hasItemsSec  |= bchRes.meta.hasItemsSec;
+    this->meta.hasAggregate  |= bchRes.meta.hasAggregate;
+    this->meta.onlyAggregate &= bchRes.meta.onlyAggregate;
+    this->meta.hasCv         |= bchRes.meta.hasCv;
+    this->meta.hasBytesSec   |= bchRes.meta.hasBytesSec;
+    this->meta.hasItemsSec   |= bchRes.meta.hasItemsSec;
 }
 
 /**************************************************************************************************/
