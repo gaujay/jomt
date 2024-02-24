@@ -27,9 +27,7 @@
 namespace Ui {
 class PlotterBarChart;
 }
-namespace QtCharts {
 class QChartView;
-}
 struct BenchResults;
 struct FileReload;
 
@@ -99,7 +97,7 @@ private:
     };
     
     Ui::PlotterBarChart *ui;
-    QtCharts::QChartView *mChartView = nullptr;
+    QChartView *mChartView = nullptr;
     
     QVector<int> mBenchIdxs;
     const PlotParams mPlotParams;

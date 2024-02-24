@@ -3,7 +3,7 @@
 
 Visualization tool for Google benchmark results.
 
-Built upon Qt5 Charts and DataVisualization modules.
+Built upon Qt6 Charts and DataVisualization modules.
 
 ![Screenshot_00](docs/screenshots/00.png)
 ![Screenshot_01](docs/screenshots/01.png)
@@ -48,7 +48,7 @@ Arguments:
 Supports GCC/MinGW and MSVC builds through CMake.
 
 You may need to install Qt dev libraries, if not already available.
-See : https://doc.qt.io/qt-5/gettingstarted.html#installing-qt
+See : https://doc.qt.io/qt-6/get-and-install-qt.html
 
 Then just open 'CMakeLists.txt' with a compatible IDE (like QtCreator) or use command line:
 

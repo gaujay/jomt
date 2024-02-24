@@ -27,7 +27,8 @@
 #include <QJsonDocument>
 #include <QtCharts>
 
-using namespace QtCharts;
+#include <memory>
+#include <utility>
 
 static const char* config_file = "config_boxes.json";
 static const bool force_config = false;
@@ -134,9 +135,9 @@ void PlotterBoxChart::connectUI()
 
 void PlotterBoxChart::setupChart(BenchResults &bchResults, const QVector<int> &bchIdxs, const PlotParams &plotParams, bool init)
 {
-//    QScopedPointer<QChart> scopedChart(new QChart());
+//    std::unique_ptr<QChart> scopedChart(new QChart());
 //    QChart* chart = scopedChart.get();
-    QScopedPointer<QChart> scopedChart;
+    std::unique_ptr<QChart> scopedChart;
     QChart* chart = nullptr;
     if (init) {
         scopedChart.reset( new QChart() );
@@ -170,10 +171,10 @@ void PlotterBoxChart::setupChart(BenchResults &bchResults, const QVector<int> &b
     // Box: one per benchmark % X-param
     QVector<BenchSubset> bchSubsets = bchResults.groupParam(plotParams.xType == PlotArgumentType,
                                                             bchIdxs, plotParams.xIdx, "X");
-    for (const auto& bchSubset : qAsConst(bchSubsets))
+    for (const auto& bchSubset : std::as_const(bchSubsets))
     {
         // Series = benchmark % X-param
-        QScopedPointer<QBoxPlotSeries> series(new QBoxPlotSeries());
+        std::unique_ptr<QBoxPlotSeries> series(new QBoxPlotSeries());
         
         const QString & subsetName = bchSubset.name;
 //        qDebug() << "subsetName:" << subsetName;
@@ -186,19 +187,19 @@ void PlotterBoxChart::setupChart(BenchResults &bchResults, const QVector<int> &b
             BenchYStats yStats = getYPlotStats(bchResults.benchmarks[idx], plotParams.yType);
             
             // BoxSet
-            QScopedPointer<QBoxSet> box(new QBoxSet( xName.toHtmlEscaped() ));
+            std::unique_ptr<QBoxSet> box(new QBoxSet( xName.toHtmlEscaped() ));
             box->setValue(QBoxSet::LowerExtreme,  yStats.min      * mCurrentTimeFactor);
             box->setValue(QBoxSet::UpperExtreme,  yStats.max      * mCurrentTimeFactor);
             box->setValue(QBoxSet::Median,        yStats.median   * mCurrentTimeFactor);
             box->setValue(QBoxSet::LowerQuartile, yStats.lowQuart * mCurrentTimeFactor);
             box->setValue(QBoxSet::UpperQuartile, yStats.uppQuart * mCurrentTimeFactor);
             
-            series->append(box.take());
+            series->append(box.release());
         }
         // Add series
         series->setName( subsetName.toHtmlEscaped() );
         mSeriesMapping.push_back({subsetName, subsetName}); // color set later
-        chart->addSeries(series.take());
+        chart->addSeries(series.release());
     }
     
     // Axes
@@ -227,7 +228,7 @@ void PlotterBoxChart::setupChart(BenchResults &bchResults, const QVector<int> &b
     if (init)
     {
         // View
-        mChartView = new QChartView(scopedChart.take(), this);
+        mChartView = new QChartView(scopedChart.release(), this);
         mChartView->setRenderHint(QPainter::Antialiasing);
     }
 }
@@ -381,13 +382,13 @@ void PlotterBoxChart::loadConfig(bool init)
                 if ( config.contains("oldName")  && config["oldName"].isString()
                   && config.contains("newName")  && config["newName"].isString()
                   && config.contains("newColor") && config["newColor"].isString()
-                  && QColor::isValidColor(config["newColor"].toString()) )
+                  && QColor::isValidColorName(config["newColor"].toString()) )
                 {
                     SeriesConfig savedConfig(config["oldName"].toString(), "");
                     int iCfg = mSeriesMapping.indexOf(savedConfig);
                     if (iCfg >= 0) {
                         mSeriesMapping[iCfg].newName = config["newName"].toString();
-                        mSeriesMapping[iCfg].newColor.setNamedColor( config["newColor"].toString() );
+                        mSeriesMapping[iCfg].newColor.fromString( config["newColor"].toString() );
                     }
                 }
             }
@@ -494,7 +495,7 @@ void PlotterBoxChart::saveConfig()
         json["legend.fontSize"] = ui->spinBoxLegendFontSize->value();
         // Series
         QJsonArray series;
-        for (const auto& seriesConfig : qAsConst(mSeriesMapping)) {
+        for (const auto& seriesConfig : std::as_const(mSeriesMapping)) {
             QJsonObject config;
             config["oldName"] = seriesConfig.oldName;
             config["newName"] = seriesConfig.newName;
@@ -1037,7 +1038,7 @@ void PlotterBoxChart::onReloadClicked()
         return;
     }
     
-    for (const auto& addFile : qAsConst(mAddFilenames))
+    for (const auto& addFile : std::as_const(mAddFilenames))
     {
         errorMsg.clear();
         BenchResults newAddResults = ResultParser::parseJsonFile(addFile.filename, errorMsg);
@@ -1071,7 +1072,7 @@ void PlotterBoxChart::onReloadClicked()
     int newSeriesIdx = 0;
     if (errorMsg.isEmpty())
     {
-        for (const auto& bchSubset : qAsConst(newBchSubsets))
+        for (const auto& bchSubset : std::as_const(newBchSubsets))
         {
             if (newSeriesIdx >= oldChartSeries.size())
                 break;
@@ -1099,7 +1100,7 @@ void PlotterBoxChart::onReloadClicked()
     if ( errorMsg.isEmpty() )
     {
         newSeriesIdx = 0;
-        for (const auto& bchSubset : qAsConst(newBchSubsets))
+        for (const auto& bchSubset : std::as_const(newBchSubsets))
         {
             // Update points
             QBoxPlotSeries* oldSeries = (QBoxPlotSeries*)oldChartSeries[newSeriesIdx];
@@ -1111,14 +1112,14 @@ void PlotterBoxChart::onReloadClicked()
                                                            idx, mPlotParams.xIdx);
                 BenchYStats yStats = getYPlotStats(newBchResults.benchmarks[idx], mPlotParams.yType);
                 
-                QScopedPointer<QBoxSet> box(new QBoxSet( xName.toHtmlEscaped() ));
+                std::unique_ptr<QBoxSet> box(new QBoxSet( xName.toHtmlEscaped() ));
                 box->setValue(QBoxSet::LowerExtreme,  yStats.min      * mCurrentTimeFactor);
                 box->setValue(QBoxSet::UpperExtreme,  yStats.max      * mCurrentTimeFactor);
                 box->setValue(QBoxSet::Median,        yStats.median   * mCurrentTimeFactor);
                 box->setValue(QBoxSet::LowerQuartile, yStats.lowQuart * mCurrentTimeFactor);
                 box->setValue(QBoxSet::UpperQuartile, yStats.uppQuart * mCurrentTimeFactor);
                 
-                oldSeries->append(box.take());
+                oldSeries->append(box.release());
             }
             ++newSeriesIdx;
         }

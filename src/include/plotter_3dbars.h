@@ -27,9 +27,7 @@
 namespace Ui {
 class Plotter3DBars;
 }
-namespace QtDataVisualization {
 class Q3DBars;
-}
 struct BenchResults;
 struct FileReload;
 
@@ -104,7 +102,7 @@ private:
     void setupGradients();
     
     Ui::Plotter3DBars *ui;
-    QtDataVisualization::Q3DBars *mBars;
+    Q3DBars *mBars;
     
     QVector<int> mBenchIdxs;
     const PlotParams mPlotParams;

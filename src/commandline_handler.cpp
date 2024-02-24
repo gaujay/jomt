@@ -29,6 +29,8 @@
 #include <QFileInfo>
 #include <QDebug>
 
+#include <utility>
+
 const char* ct_name = "chart-type";
 const char* cx_name = "chart-x";
 const char* cy_name = "chart-y";
@@ -109,7 +111,7 @@ bool CommandLineHandler::process(const QApplication& app)
     if ( !apFiles.isEmpty() )
     {
         QStringList apList = apFiles.split(';', Qt::SkipEmptyParts);
-        for (const auto& fileName : qAsConst(apList))
+        for (const auto& fileName : std::as_const(apList))
         {
             if ( QFile::exists(fileName) )
             {
@@ -129,7 +131,7 @@ bool CommandLineHandler::process(const QApplication& app)
     if ( !owFiles.isEmpty() )
     {
         QStringList owList = owFiles.split(';', Qt::SkipEmptyParts);
-        for (const auto& fileName : qAsConst(owList))
+        for (const auto& fileName : std::as_const(owList))
         {
             if ( QFile::exists(fileName) )
             {

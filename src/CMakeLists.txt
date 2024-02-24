@@ -1,34 +1,34 @@
 
-find_package(Qt5 COMPONENTS Widgets Charts DataVisualization REQUIRED)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Charts DataVisualization)
 
 # Files
 set(HEADERS
-  include/mainwindow.h
-  include/benchmark_results.h
-  include/result_parser.h
-  include/plot_parameters.h
-  include/commandline_handler.h
-  include/result_selector.h
-  include/plotter_linechart.h
-  include/plotter_barchart.h
-  include/plotter_boxchart.h
-  include/plotter_3dbars.h
-  include/plotter_3dsurface.h
+	include/mainwindow.h
+	include/benchmark_results.h
+	include/result_parser.h
+	include/plot_parameters.h
+	include/commandline_handler.h
+	include/result_selector.h
+	include/plotter_linechart.h
+	include/plotter_barchart.h
+	include/plotter_boxchart.h
+	include/plotter_3dbars.h
+	include/plotter_3dsurface.h
   include/series_dialog.h
 )
 set(SOURCES
-  main.cpp
-  mainwindow.cpp
-  benchmark_results.cpp
-  result_parser.cpp
+	main.cpp
+	mainwindow.cpp
+	benchmark_results.cpp
+	result_parser.cpp
   plot_parameters.cpp
-  commandline_handler.cpp
-  result_selector.cpp
-  plotter_linechart.cpp  
-  plotter_barchart.cpp
-  plotter_boxchart.cpp
-  plotter_3dbars.cpp
-  plotter_3dsurface.cpp
+	commandline_handler.cpp
+	result_selector.cpp
+	plotter_linechart.cpp  
+	plotter_barchart.cpp
+	plotter_boxchart.cpp
+	plotter_3dbars.cpp
+	plotter_3dsurface.cpp
   series_dialog.cpp
 )
 set(FORMS
@@ -55,4 +55,4 @@ add_executable(JOMT
 )
 target_include_directories(JOMT PRIVATE include)
 
-target_link_libraries(JOMT PRIVATE Qt5::Widgets Qt5::Charts Qt5::DataVisualization)
+target_link_libraries(JOMT PRIVATE Qt6::Widgets Qt6::Charts Qt6::DataVisualization)

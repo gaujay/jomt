@@ -27,9 +27,7 @@
 namespace Ui {
 class Plotter3DSurface;
 }
-namespace QtDataVisualization {
 class Q3DSurface;
-}
 struct BenchResults;
 struct FileReload;
 
@@ -101,7 +99,7 @@ private:
     void setupGradients();
     
     Ui::Plotter3DSurface *ui;
-    QtDataVisualization::Q3DSurface *mSurface;
+    Q3DSurface *mSurface;
     
     QVector<int> mBenchIdxs;
     const PlotParams mPlotParams;

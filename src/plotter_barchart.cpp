@@ -27,7 +27,8 @@
 #include <QJsonDocument>
 #include <QtCharts>
 
-using namespace QtCharts;
+#include <memory>
+#include <utility>
 
 static const char* config_file = "config_bars.json";
 static const bool force_config = false;
@@ -148,7 +149,7 @@ void PlotterBarChart::connectUI()
 
 void PlotterBarChart::setupChart(const BenchResults &bchResults, const QVector<int> &bchIdxs, const PlotParams &plotParams, bool init)
 {
-    QScopedPointer<QChart> scopedChart;
+    std::unique_ptr<QChart> scopedChart;
     QChart* chart = nullptr;
     if (init) {
         scopedChart.reset( new QChart() );
@@ -176,7 +177,7 @@ void PlotterBarChart::setupChart(const BenchResults &bchResults, const QVector<i
     }
     
     // Single series, one barset per benchmark type
-    QScopedPointer<QAbstractBarSeries> scopedSeries;
+    std::unique_ptr<QAbstractBarSeries> scopedSeries;
     if (mIsVert)    scopedSeries.reset(new QBarSeries());
     else            scopedSeries.reset(new QHorizontalBarSeries());
     QAbstractBarSeries* series = scopedSeries.get();
@@ -195,7 +196,7 @@ void PlotterBarChart::setupChart(const BenchResults &bchResults, const QVector<i
     
     bool firstCol = true;
     QStringList prevColLabels;
-    for (const auto& bchSubset : qAsConst(bchSubsets))
+    for (const auto& bchSubset : std::as_const(bchSubsets))
     {
         // Ignore empty set
         if ( bchSubset.idxs.isEmpty() ) {
@@ -208,7 +209,7 @@ void PlotterBarChart::setupChart(const BenchResults &bchResults, const QVector<i
 //        qDebug() << "subsetIdxs:" << bchSubset.idxs;
         
         // X-row
-        QScopedPointer<QBarSet> barSet(new QBarSet( subsetName.toHtmlEscaped() ));
+        std::unique_ptr<QBarSet> barSet(new QBarSet( subsetName.toHtmlEscaped() ));
         mSeriesMapping.push_back({subsetName, subsetName}); // color set later
         
         QStringList colLabels;
@@ -222,7 +223,7 @@ void PlotterBarChart::setupChart(const BenchResults &bchResults, const QVector<i
             barSet->append(getYPlotValue(bchResults.benchmarks[idx], plotParams.yType) * mCurrentTimeFactor);
         }
         // Add set (i.e. color)
-        series->append(barSet.take());
+        series->append(barSet.release());
         
         // Set column labels (only if no collision, empty otherwise)
         if (firstCol) // init
@@ -237,7 +238,7 @@ void PlotterBarChart::setupChart(const BenchResults &bchResults, const QVector<i
         firstCol = false;
     }
     // Add the series
-    chart->addSeries(scopedSeries.take());
+    chart->addSeries(scopedSeries.release());
     
     // Axes
     if (series->count() > 0)
@@ -269,7 +270,7 @@ void PlotterBarChart::setupChart(const BenchResults &bchResults, const QVector<i
     if (init)
     {
         // View
-        mChartView = new QChartView(scopedChart.take(), this);
+        mChartView = new QChartView(scopedChart.release(), this);
         mChartView->setRenderHint(QPainter::Antialiasing);
     }
 }
@@ -429,13 +430,13 @@ void PlotterBarChart::loadConfig(bool init)
                 if ( config.contains("oldName")  && config["oldName"].isString()
                   && config.contains("newName")  && config["newName"].isString()
                   && config.contains("newColor") && config["newColor"].isString()
-                  && QColor::isValidColor(config["newColor"].toString()) )
+                  && QColor::isValidColorName(config["newColor"].toString()) )
                 {
                     SeriesConfig savedConfig(config["oldName"].toString(), "");
                     int iCfg = mSeriesMapping.indexOf(savedConfig);
                     if (iCfg >= 0) {
                         mSeriesMapping[iCfg].newName = config["newName"].toString();
-                        mSeriesMapping[iCfg].newColor.setNamedColor( config["newColor"].toString() );
+                        mSeriesMapping[iCfg].newColor.fromString( config["newColor"].toString() );
                     }
                 }
             }
@@ -546,7 +547,7 @@ void PlotterBarChart::saveConfig()
         json["legend.fontSize"] = ui->spinBoxLegendFontSize->value();
         // Series
         QJsonArray series;
-        for (const auto& seriesConfig : qAsConst(mSeriesMapping)) {
+        for (const auto& seriesConfig : std::as_const(mSeriesMapping)) {
             QJsonObject config;
             config["oldName"] = seriesConfig.oldName;
             config["newName"] = seriesConfig.newName;
@@ -1137,7 +1138,7 @@ void PlotterBarChart::onReloadClicked()
         return;
     }
     
-    for (const auto& addFile : qAsConst(mAddFilenames))
+    for (const auto& addFile : std::as_const(mAddFilenames))
     {
         errorMsg.clear();
         BenchResults newAddResults = ResultParser::parseJsonFile(addFile.filename, errorMsg);
@@ -1179,7 +1180,7 @@ void PlotterBarChart::onReloadClicked()
     if (errorMsg.isEmpty())
     {
         const QAbstractBarSeries* oldBarSeries = (QAbstractBarSeries*)oldChartSeries[0];
-        for (const auto& bchSubset : qAsConst(newBchSubsets))
+        for (const auto& bchSubset : std::as_const(newBchSubsets))
         {
             // Ignore empty set
             if ( bchSubset.idxs.isEmpty() )
@@ -1210,7 +1211,7 @@ void PlotterBarChart::onReloadClicked()
     {
         newBarSetIdx = 0;
         const QAbstractBarSeries* oldBarSeries = (QAbstractBarSeries*)oldChartSeries[0];
-        for (const auto& bchSubset : qAsConst(newBchSubsets))
+        for (const auto& bchSubset : std::as_const(newBchSubsets))
         {
             // Ignore empty set
             if ( bchSubset.idxs.isEmpty() ) {

@@ -17,6 +17,8 @@
 
 #include <QMap>
 
+#include <utility>
+
 #define BCHRES_DEBUG false
 #include <QDebug>
 
@@ -233,7 +235,7 @@ QVector<BenchSubset> BenchResults::segmentFamilies(const QVector<int> &subset) c
         // Append to associated entry
         famRes[famMap[bchData.family]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : qAsConst(famRes))
+    for (const BenchSubset& sub : std::as_const(famRes))
         if (BCHRES_DEBUG) qDebug() << "familySub:" << sub.name << "->" << sub.idxs;
     
     return famRes;
@@ -260,7 +262,7 @@ QVector<BenchSubset> BenchResults::segmentContainers(const QVector<int> &subset)
         // Append to associated entry
         ctnRes[ctnMap[bchData.container]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : qAsConst(ctnRes))
+    for (const BenchSubset& sub : std::as_const(ctnRes))
         if (BCHRES_DEBUG) qDebug() << "containerSub:" << sub.name << "->" << sub.idxs;
     
     return ctnRes;
@@ -310,7 +312,7 @@ QVector<BenchSubset> BenchResults::segmentBaseNames(const QVector<int> &subset) 
         // Append to associated entry
         nameRes[nameMap[bchData.base_name]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : qAsConst(nameRes))
+    for (const BenchSubset& sub : std::as_const(nameRes))
         if (BCHRES_DEBUG) qDebug() << "nameSub:" << sub.name << "->" << sub.idxs;
     
     return nameRes;
@@ -352,7 +354,7 @@ QVector<BenchSubset> BenchResults::segment2DNames(const QVector<int> &subset,
         // Append to associated entry
         nameRes[nameMap[difName]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : qAsConst(nameRes))
+    for (const BenchSubset& sub : std::as_const(nameRes))
         if (BCHRES_DEBUG) qDebug() << "nameSub:" << sub.name << "->" << sub.idxs;
     
     return nameRes;
@@ -382,7 +384,7 @@ QVector<BenchSubset> BenchResults::segmentArguments(const QVector<int> &subset, 
         // Append to associated entry
         argRes[argMap[param]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : qAsConst(argRes))
+    for (const BenchSubset& sub : std::as_const(argRes))
         if (BCHRES_DEBUG) qDebug() << "argSub:" << sub.name << "->" << sub.idxs;
     
     return argRes;
@@ -412,7 +414,7 @@ QVector<BenchSubset> BenchResults::segmentTemplates(const QVector<int> &subset, 
         // Append to associated entry
         tpltRes[tpltMap[param]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : qAsConst(tpltRes))
+    for (const BenchSubset& sub : std::as_const(tpltRes))
         if (BCHRES_DEBUG) qDebug() << "templateSub:" << sub.name << "->" << sub.idxs;
     
     return tpltRes;
@@ -455,7 +457,7 @@ QVector<BenchSubset> BenchResults::groupArgument(const QVector<int> &subset,
         // Append to associated entry
         argRes[argMap[bchID]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : qAsConst(argRes))
+    for (const BenchSubset& sub : std::as_const(argRes))
         if (BCHRES_DEBUG) qDebug() << "argGSub:" << sub.name << "->" << sub.idxs;
     
     return argRes;
@@ -487,7 +489,7 @@ QVector<BenchSubset> BenchResults::groupTemplate(const QVector<int> &subset,
         // Append to associated entry
         tpltRes[tpltMap[bchID]].idxs.push_back(idx);
     }
-    for (const BenchSubset& sub : qAsConst(tpltRes))
+    for (const BenchSubset& sub : std::as_const(tpltRes))
         if (BCHRES_DEBUG) qDebug() << "tpltGSub:" << sub.name << "->" << sub.idxs;
     
     return tpltRes;
@@ -534,7 +536,7 @@ QString BenchResults::getParamName(bool isArgument, int benchIdx, int paramIdx) 
 void BenchResults::appendResults(const BenchResults &bchRes)
 {
     // Benchmarks
-    for (const auto& newBench : qAsConst(bchRes.benchmarks))
+    for (const auto& newBench : std::as_const(bchRes.benchmarks))
     {
         // Rename if needed
         QString tempName = newBench.name;
@@ -586,7 +588,7 @@ void BenchResults::appendResults(const BenchResults &bchRes)
 void BenchResults::overwriteResults(const BenchResults &bchRes)
 {
     // Benchmarks
-    for (const auto& newBench : qAsConst(bchRes.benchmarks))
+    for (const auto& newBench : std::as_const(bchRes.benchmarks))
     {
         int idx = -1;
         for (int i=0; idx<0 && i<this->benchmarks.size(); ++i)

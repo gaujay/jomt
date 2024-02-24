@@ -27,7 +27,8 @@
 #include <QJsonDocument>
 #include <QtDataVisualization>
 
-using namespace QtDataVisualization;
+#include <memory>
+#include <utility>
 
 static const char* config_file = "config_3dbars.json";
 static const bool force_config = false;
@@ -132,7 +133,7 @@ void Plotter3DBars::connectUI()
 
 void Plotter3DBars::setupChart(const BenchResults &bchResults, const QVector<int> &bchIdxs, const PlotParams &plotParams, bool init)
 {
-    QScopedPointer<Q3DBars> scopedBars;
+    std::unique_ptr<Q3DBars> scopedBars;
     Q3DBars* bars = nullptr;
     if (init) {
         scopedBars.reset( new Q3DBars() );
@@ -169,15 +170,15 @@ void Plotter3DBars::setupChart(const BenchResults &bchResults, const QVector<int
     if (!hasZParam)
     {
         // Single series (i.e. color)
-        QScopedPointer<QBar3DSeries> series(new QBar3DSeries);
+        std::unique_ptr<QBar3DSeries> series(new QBar3DSeries);
 
         QVector<BenchSubset> bchSubsets = bchResults.groupParam(plotParams.xType == PlotArgumentType,
                                                                 bchIdxs, plotParams.xIdx, "X");
         bool firstCol = true;
-        for (const auto& bchSubset : qAsConst(bchSubsets))
+        for (const auto& bchSubset : std::as_const(bchSubsets))
         {
             // One row per benchmark * X-group
-            QScopedPointer<QBarDataRow> data(new QBarDataRow);
+            std::unique_ptr<QBarDataRow> data(new QBarDataRow);
             
             const QString & subsetName = bchSubset.name;
 //            qDebug() << "subsetName:" << subsetName;
@@ -194,7 +195,7 @@ void Plotter3DBars::setupChart(const BenchResults &bchResults, const QVector<int
                 data->append( static_cast<float>(getYPlotValue(bchResults.benchmarks[idx], plotParams.yType) * mCurrentTimeFactor) );
             }
             // Add benchmark row
-            series->dataProxy()->addRow(data.take(), subsetName);
+            series->dataProxy()->addRow(data.release(), subsetName);
             
             // Set column labels (only if no collision, empty otherwise)
             if (firstCol) // init
@@ -215,7 +216,7 @@ void Plotter3DBars::setupChart(const BenchResults &bchResults, const QVector<int
         series->setMeshSmooth(false);
         mSeriesMapping.push_back({"", ""}); // color set later
         
-        bars->addSeries(series.take());
+        bars->addSeries(series.release());
     }
     //
     // Z-param -> one series per benchmark, one row per Z, one column per X
@@ -230,20 +231,20 @@ void Plotter3DBars::setupChart(const BenchResults &bchResults, const QVector<int
         for (const auto& bchName : bchNames)
         {
             // One series (i.e. color) per 2D name
-            QScopedPointer<QBar3DSeries> series(new QBar3DSeries);
+            std::unique_ptr<QBar3DSeries> series(new QBar3DSeries);
 //            qDebug() << "bchName" << bchName.name << "|" << bchName.idxs;
             
             // Segment: one sub per Z-param from 2D names
             QVector<BenchSubset> bchZSubs = bchResults.segmentParam(plotParams.zType == PlotArgumentType,
                                                                     bchName.idxs, plotParams.zIdx);
             QStringList curRowLabels;
-            for (const auto& bchZSub : qAsConst(bchZSubs))
+            for (const auto& bchZSub : std::as_const(bchZSubs))
             {
 //                qDebug() << "bchZSub" << bchZSub.name << "|" << bchZSub.idxs;
                 curRowLabels.append(bchZSub.name);
                 
                 // One row per Z-param from 2D names
-                QScopedPointer<QBarDataRow> data(new QBarDataRow);
+                std::unique_ptr<QBarDataRow> data(new QBarDataRow);
                 
                 // Group: one column per X-param
                 QVector<BenchSubset> bchSubsets = bchResults.groupParam(plotParams.xType == PlotArgumentType,
@@ -266,7 +267,7 @@ void Plotter3DBars::setupChart(const BenchResults &bchResults, const QVector<int
                     data->append( static_cast<float>(getYPlotValue(bchResults.benchmarks[idx], plotParams.yType) * mCurrentTimeFactor) );
                 }
                 // Add benchmark row
-                series->dataProxy()->addRow(data.take());
+                series->dataProxy()->addRow(data.release());
                                     
                 // Check column labels collisions
                 if (sameColLabels) {
@@ -303,7 +304,7 @@ void Plotter3DBars::setupChart(const BenchResults &bchResults, const QVector<int
             series->setMesh(QAbstract3DSeries::MeshBevelBar);
             series->setMeshSmooth(false);
             
-            bars->addSeries(series.take());
+            bars->addSeries(series.release());
         }
         // Set row/column labels (empty if collisions)
         if ( !bars->seriesList().isEmpty() && bars->seriesList().constFirst()->dataProxy()->rowCount() > 0)
@@ -356,7 +357,7 @@ void Plotter3DBars::setupChart(const BenchResults &bchResults, const QVector<int
     if (init)
     {
         // Take
-        mBars = scopedBars.take();
+        mBars = scopedBars.release();
     }
 }
 
@@ -534,13 +535,13 @@ void Plotter3DBars::loadConfig(bool init)
                 if ( config.contains("oldName")  && config["oldName"].isString()
                   && config.contains("newName")  && config["newName"].isString()
                   && config.contains("newColor") && config["newColor"].isString()
-                  && QColor::isValidColor(config["newColor"].toString()) )
+                  && QColor::isValidColorName(config["newColor"].toString()) )
                 {
                     SeriesConfig savedConfig(config["oldName"].toString(), "");
                     int iCfg = mSeriesMapping.indexOf(savedConfig);
                     if (iCfg >= 0) {
                         mSeriesMapping[iCfg].newName = config["newName"].toString();
-                        mSeriesMapping[iCfg].newColor.setNamedColor( config["newColor"].toString() );
+                        mSeriesMapping[iCfg].newColor.fromString( config["newColor"].toString() );
                     }
                 }
             }
@@ -649,7 +650,7 @@ void Plotter3DBars::saveConfig()
         json["bars.spacing.z"] = ui->doubleSpinBoxSpacingZ->value();
         // Series
         QJsonArray series;
-        for (const auto& seriesConfig : qAsConst(mSeriesMapping)) {
+        for (const auto& seriesConfig : std::as_const(mSeriesMapping)) {
             QJsonObject config;
             config["oldName"] = seriesConfig.oldName;
             config["newName"] = seriesConfig.newName;
@@ -1176,7 +1177,7 @@ void Plotter3DBars::onReloadClicked()
         return;
     }
     
-    for (const auto& addFile : qAsConst(mAddFilenames))
+    for (const auto& addFile : std::as_const(mAddFilenames))
     {
         errorMsg.clear();
         BenchResults newAddResults = ResultParser::parseJsonFile(addFile.filename, errorMsg);
@@ -1227,7 +1228,7 @@ void Plotter3DBars::onReloadClicked()
             }
             
             int newRowsIdx = 0;
-            for (const auto& bchSubset : qAsConst(newBchSubsets))
+            for (const auto& bchSubset : std::as_const(newBchSubsets))
             {
                 const auto& oldRowLabel = oldDataProxy->rowLabels().at(newRowsIdx);
                 const QString& subsetName = bchSubset.name;
@@ -1249,7 +1250,7 @@ void Plotter3DBars::onReloadClicked()
             if ( errorMsg.isEmpty() )
             {
                 newRowsIdx = 0;
-                for (const auto& bchSubset : qAsConst(newBchSubsets))
+                for (const auto& bchSubset : std::as_const(newBchSubsets))
                 {
                     int newColsIdx = 0;
                     for (int idx : bchSubset.idxs)
@@ -1299,7 +1300,7 @@ void Plotter3DBars::onReloadClicked()
                 }
                 
                 int newRowsIdx = 0;
-                for (const auto& bchZSub : qAsConst(newBchZSubs))
+                for (const auto& bchZSub : std::as_const(newBchZSubs))
                 {
                     const auto& oldRowLabel = oldDataProxy->rowLabels().size() < newRowsIdx ?
                                                 oldDataProxy->rowLabels().at(newRowsIdx) : "";
@@ -1339,7 +1340,7 @@ void Plotter3DBars::onReloadClicked()
                     QVector<BenchSubset> newBchZSubs = newBchResults.segmentParam(mPlotParams.zType == PlotArgumentType,
                                                                                   bchName.idxs, mPlotParams.zIdx);
                     int newRowsIdx = 0;
-                    for (const auto& bchZSub : qAsConst(newBchZSubs))
+                    for (const auto& bchZSub : std::as_const(newBchZSubs))
                     {
                         QVector<BenchSubset> newBchSubsets = newBchResults.groupParam(mPlotParams.xType == PlotArgumentType,
                                                                                       bchZSub.idxs, mPlotParams.xIdx, "X");

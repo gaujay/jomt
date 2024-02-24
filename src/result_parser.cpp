@@ -46,7 +46,7 @@ static void cleanupName(BenchData &bchData)
         if (bchData.repetitions <= 0)
         {
             bool ok = false;
-            int repetitions = bchData.run_name.midRef(lastIdx + aggSuffix.size()).toInt(&ok);
+            int repetitions = QStringView{bchData.run_name}.mid(lastIdx + aggSuffix.size()).toInt(&ok);
             if (ok)
                 bchData.repetitions = repetitions;
         }

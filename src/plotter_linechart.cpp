@@ -28,7 +28,8 @@
 #include <QJsonDocument>
 #include <QtCharts>
 
-using namespace QtCharts;
+#include <memory>
+#include <utility>
 
 static const char* config_file = "config_lines.json";
 
@@ -56,7 +57,7 @@ PlotterLineChart::PlotterLineChart(const BenchResults &bchResults, const QVector
     connectUI();
     
     //TODO: select points
-    //See: https://doc.qt.io/qt-5/qtcharts-callout-example.html
+    //See: https://doc.qt.io/qt-6/qtcharts-callout-example.html
     
     // Init
     setupChart(bchResults, bchIdxs, plotParams);
@@ -136,7 +137,7 @@ void PlotterLineChart::connectUI()
 
 void PlotterLineChart::setupChart(const BenchResults &bchResults, const QVector<int> &bchIdxs, const PlotParams &plotParams, bool init)
 {
-    QScopedPointer<QChart> scopedChart;
+    std::unique_ptr<QChart> scopedChart;
     QChart* chart = nullptr;
     if (init) {
         scopedChart.reset( new QChart() );
@@ -172,7 +173,7 @@ void PlotterLineChart::setupChart(const BenchResults &bchResults, const QVector<
                                                             bchIdxs, plotParams.xIdx, "X");
     bool custDataAxis = true;
     QString custDataName;
-    for (const auto& bchSubset : qAsConst(bchSubsets))
+    for (const auto& bchSubset : std::as_const(bchSubsets))
     {
         // Ignore single point lines
         if (bchSubset.idxs.size() < 2) {
@@ -181,7 +182,7 @@ void PlotterLineChart::setupChart(const BenchResults &bchResults, const QVector<
         }
         
         // Chart type
-        QScopedPointer<QLineSeries> series;
+        std::unique_ptr<QLineSeries> series;
         if (plotParams.type == ChartLineType)   series.reset(new QLineSeries());
         else                                    series.reset(new QSplineSeries());
         
@@ -202,7 +203,7 @@ void PlotterLineChart::setupChart(const BenchResults &bchResults, const QVector<
         // Add series
         series->setName( subsetName.toHtmlEscaped() );
         mSeriesMapping.push_back({subsetName, subsetName}); // color set later
-        chart->addSeries(series.take());
+        chart->addSeries(series.release());
     }
     
     //
@@ -234,7 +235,7 @@ void PlotterLineChart::setupChart(const BenchResults &bchResults, const QVector<
     if (init)
     {
         // View
-        mChartView = new QChartView(scopedChart.take(), this);
+        mChartView = new QChartView(scopedChart.release(), this);
         mChartView->setRenderHint(QPainter::Antialiasing);
     }
 }
@@ -383,13 +384,13 @@ void PlotterLineChart::loadConfig(bool init)
                 if ( config.contains("oldName")  && config["oldName"].isString()
                   && config.contains("newName")  && config["newName"].isString()
                   && config.contains("newColor") && config["newColor"].isString()
-                  && QColor::isValidColor(config["newColor"].toString()) )
+                  && QColor::isValidColorName(config["newColor"].toString()) )
                 {
                     SeriesConfig savedConfig(config["oldName"].toString(), "");
                     int iCfg = mSeriesMapping.indexOf(savedConfig);
                     if (iCfg >= 0) {
                         mSeriesMapping[iCfg].newName = config["newName"].toString();
-                        mSeriesMapping[iCfg].newColor.setNamedColor( config["newColor"].toString() );
+                        mSeriesMapping[iCfg].newColor.fromString( config["newColor"].toString() );
                     }
                 }
             }
@@ -495,7 +496,7 @@ void PlotterLineChart::saveConfig()
         json["legend.fontSize"] = ui->spinBoxLegendFontSize->value();
         // Series
         QJsonArray series;
-        for (const auto& seriesConfig : qAsConst(mSeriesMapping)) {
+        for (const auto& seriesConfig : std::as_const(mSeriesMapping)) {
             QJsonObject config;
             config["oldName"] = seriesConfig.oldName;
             config["newName"] = seriesConfig.newName;
@@ -620,7 +621,7 @@ void PlotterLineChart::onComboTimeUnitChanged(int /*index*/)
     for (auto& series : chartSeries)
     {
         auto xySeries = (QXYSeries*)series;
-        auto points = xySeries->pointsVector();
+        auto points = xySeries->points();
         for (auto& point : points) {
             point.setY(point.y() * updateFactor);
         }
@@ -971,7 +972,7 @@ void PlotterLineChart::onCheckAutoReload(int state)
         if (mWatcher.files().empty())
         {
             mWatcher.addPath(mOrigFilename);
-            for (const auto& addFilename : qAsConst(mAddFilenames))
+            for (const auto& addFilename : std::as_const(mAddFilenames))
                 mWatcher.addPath( addFilename.filename );
         }
     }
@@ -1001,7 +1002,7 @@ void PlotterLineChart::onReloadClicked()
         QMessageBox::critical(this, "Chart reload", "Error parsing original file: " + mOrigFilename + " -> " + errorMsg);
         return;
     }
-    for (const auto& addFile : qAsConst(mAddFilenames))
+    for (const auto& addFile : std::as_const(mAddFilenames))
     {
         errorMsg.clear();
         BenchResults newAddResults = ResultParser::parseJsonFile(addFile.filename, errorMsg);
@@ -1034,7 +1035,7 @@ void PlotterLineChart::onReloadClicked()
     int newSeriesIdx = 0;
     if (errorMsg.isEmpty())
     {
-        for (const auto& bchSubset : qAsConst(newBchSubsets))
+        for (const auto& bchSubset : std::as_const(newBchSubsets))
         {
             // Ignore single point lines
             if (bchSubset.idxs.size() < 2)
@@ -1066,7 +1067,7 @@ void PlotterLineChart::onReloadClicked()
         bool custDataAxis = true;
         QString custDataName;
         newSeriesIdx = 0;
-        for (const auto& bchSubset : qAsConst(newBchSubsets))
+        for (const auto& bchSubset : std::as_const(newBchSubsets))
         {
             // Ignore single point lines
             if (bchSubset.idxs.size() < 2) {

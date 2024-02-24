@@ -27,7 +27,8 @@
 #include <QJsonDocument>
 #include <QtDataVisualization>
 
-using namespace QtDataVisualization;
+#include <memory>
+#include <utility>
 
 static const char* config_file = "config_3dsurface.json";
 static const bool force_config = false;
@@ -127,7 +128,7 @@ void Plotter3DSurface::connectUI()
 
 void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<int> &bchIdxs, const PlotParams &plotParams, bool init)
 {
-    QScopedPointer<Q3DSurface> scopedSurface;
+    std::unique_ptr<Q3DSurface> scopedSurface;
     Q3DSurface* surface = nullptr;
     if (init) {
         scopedSurface.reset( new Q3DSurface() );
@@ -167,8 +168,8 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
     {
         // Single series (i.e. color)
         QSurfaceDataProxy *dataProxy = new QSurfaceDataProxy();
-        QScopedPointer<QSurface3DSeries> series(new QSurface3DSeries(dataProxy));
-        QScopedPointer<QSurfaceDataArray> dataArray(new QSurfaceDataArray);
+        std::unique_ptr<QSurface3DSeries> series(new QSurface3DSeries(dataProxy));
+        std::unique_ptr<QSurfaceDataArray> dataArray(new QSurfaceDataArray);
         
         // Segment per X-param
         QVector<BenchSubset> bchSubsets = bchResults.groupParam(plotParams.xType == PlotArgumentType,
@@ -195,7 +196,7 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
         {
             int prevRowSize = 0;
             double zFallback = 0.;
-            for (const auto& bchSubset : qAsConst(bchSubsets))
+            for (const auto& bchSubset : std::as_const(bchSubsets))
             {
                 // Check inter benchmark consistency
                 if (prevRowSize > 0 && prevRowSize != bchSubset.idxs.size()) {
@@ -206,7 +207,7 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
                 prevRowSize = bchSubset.idxs.size();
                 
                 // One row per X-group
-                QScopedPointer<QSurfaceDataRow> newRow(new QSurfaceDataRow( bchSubset.idxs.size() ));
+                std::unique_ptr<QSurfaceDataRow> newRow(new QSurfaceDataRow( bchSubset.idxs.size() ));
                 
 //                const QString & subsetName = bchSubset.name;
 //                qDebug() << "subsetName:" << subsetName;
@@ -228,7 +229,7 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
                     (*newRow)[index++].setPosition( QVector3D(xVal, yVal, zFallback) );
                 }
                 // Add row
-                dataArray->append(newRow.take());
+                dataArray->append(newRow.release());
                 
                 ++zFallback;
             }
@@ -236,14 +237,14 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
         if (symBchOK && dataArray->size() > 0)
         {
             // Add series
-            dataProxy->resetArray(dataArray.take());
+            dataProxy->resetArray(dataArray.release());
             
             series->setDrawMode(QSurface3DSeries::DrawSurfaceAndWireframe);
             series->setFlatShadingEnabled(true);
             series->setItemLabelFormat(QStringLiteral("[@xLabel, @zLabel]: @yLabel"));
             mSeriesMapping.push_back({"", ""}); // color set later
             
-            surface->addSeries(series.take());
+            surface->addSeries(series.release());
         }
     }
     //
@@ -258,7 +259,7 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
         {
             // One series (i.e. color) per 2D-name
             QSurfaceDataProxy *dataProxy = new QSurfaceDataProxy();
-            QScopedPointer<QSurface3DSeries> series(new QSurface3DSeries(dataProxy));
+            std::unique_ptr<QSurface3DSeries> series(new QSurface3DSeries(dataProxy));
             
 //            qDebug() << "bchName" << bchName.name << "|" << bchName.idxs;
             
@@ -294,9 +295,9 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
                 continue;
             }
 
-            QScopedPointer<QSurfaceDataArray> dataArray(new QSurfaceDataArray);
+            std::unique_ptr<QSurfaceDataArray> dataArray(new QSurfaceDataArray);
             double zFallback = 0.;
-            for (const auto& bchZSub : qAsConst(bchZSubs))
+            for (const auto& bchZSub : std::as_const(bchZSubs))
             {
                 QString zName = bchZSub.name;
 //                qDebug() << "bchZSub" << bchZSub.name << "|" << bchZSub.idxs;
@@ -304,13 +305,13 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
                 double zVal = BenchResults::getParamValue(zName, custZName, custZAxis, zFallback);
                 
                 // One row per Z-param from 2D-names
-                QScopedPointer<QSurfaceDataRow> newRow(new QSurfaceDataRow( bchZSub.idxs.size() ));
+                std::unique_ptr<QSurfaceDataRow> newRow(new QSurfaceDataRow( bchZSub.idxs.size() ));
                 
                 // One subset per X-param from Z-Subset
                 QVector<BenchSubset> bchSubsets = bchResults.groupParam(plotParams.xType == PlotArgumentType,
                                                                         bchZSub.idxs, plotParams.xIdx, "X");
                 Q_ASSERT(bchSubsets.size() <= 1);
-                for (const auto& bchSubset : qAsConst(bchSubsets))
+                for (const auto& bchSubset : std::as_const(bchSubsets))
                 {
                     int index = 0;
                     double xFallback = 0.;
@@ -328,11 +329,11 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
                         (*newRow)[index++].setPosition( QVector3D(xVal, yVal, zVal) );
                     }
                     // Add row
-                    dataArray->append(newRow.take());
+                    dataArray->append(newRow.release());
                 }
             }
             // Add series
-            dataProxy->resetArray(dataArray.take());
+            dataProxy->resetArray(dataArray.release());
             
             series->setDrawMode(QSurface3DSeries::DrawSurfaceAndWireframe);
             series->setFlatShadingEnabled(true);
@@ -340,7 +341,7 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
             mSeriesMapping.push_back({bchName.name, bchName.name}); // color set later
             series->setItemLabelFormat(QStringLiteral("@seriesName [@xLabel, @zLabel]: @yLabel"));
             
-            surface->addSeries(series.take());
+            surface->addSeries(series.release());
         }
     }
     
@@ -397,7 +398,7 @@ void Plotter3DSurface::setupChart(const BenchResults &bchResults, const QVector<
     if (init)
     {
         // Take
-        mSurface = scopedSurface.take();
+        mSurface = scopedSurface.release();
     }
 }
 
@@ -550,13 +551,13 @@ void Plotter3DSurface::loadConfig(bool init)
                 if ( config.contains("oldName")  && config["oldName"].isString()
                   && config.contains("newName")  && config["newName"].isString()
                   && config.contains("newColor") && config["newColor"].isString()
-                  && QColor::isValidColor(config["newColor"].toString()) )
+                  && QColor::isValidColorName(config["newColor"].toString()) )
                 {
                     SeriesConfig savedConfig(config["oldName"].toString(), "");
                     int iCfg = mSeriesMapping.indexOf(savedConfig);
                     if (iCfg >= 0) {
                         mSeriesMapping[iCfg].newName = config["newName"].toString();
-                        mSeriesMapping[iCfg].newColor.setNamedColor( config["newColor"].toString() );
+                        mSeriesMapping[iCfg].newColor.fromString( config["newColor"].toString() );
                     }
                 }
             }
@@ -660,7 +661,7 @@ void Plotter3DSurface::saveConfig()
         json["surface.gradient"] = ui->comboBoxGradient->currentText();
         // Series
         QJsonArray series;
-        for (const auto& seriesConfig : qAsConst(mSeriesMapping)) {
+        for (const auto& seriesConfig : std::as_const(mSeriesMapping)) {
             QJsonObject config;
             config["oldName"] = seriesConfig.oldName;
             config["newName"] = seriesConfig.newName;
@@ -1175,7 +1176,7 @@ void Plotter3DSurface::onReloadClicked()
         return;
     }
     
-    for (const auto& addFile : qAsConst(mAddFilenames))
+    for (const auto& addFile : std::as_const(mAddFilenames))
     {
         errorMsg.clear();
         BenchResults newAddResults = ResultParser::parseJsonFile(addFile.filename, errorMsg);
@@ -1248,7 +1249,7 @@ void Plotter3DSurface::onReloadClicked()
             
             int prevRowSize = 0;
             int newRowsIdx  = 0;
-            for (const auto& bchSubset : qAsConst(newBchSubsets))
+            for (const auto& bchSubset : std::as_const(newBchSubsets))
             {
                 // Check inter benchmark consistency
                 if (prevRowSize > 0 && prevRowSize != bchSubset.idxs.size()) {
@@ -1274,7 +1275,7 @@ void Plotter3DSurface::onReloadClicked()
                 double zFallback = 0.;
                 
                 newRowsIdx  = 0;
-                for (const auto& bchSubset : qAsConst(newBchSubsets))
+                for (const auto& bchSubset : std::as_const(newBchSubsets))
                 {
                     double xFallback = 0.;
                     int newColsIdx = 0;
@@ -1357,7 +1358,7 @@ void Plotter3DSurface::onReloadClicked()
                 }
                 
                 int newRowsIdx  = 0;
-                for (const auto& bchZSub : qAsConst(newBchZSubs))
+                for (const auto& bchZSub : std::as_const(newBchZSubs))
                 {
                     const auto& oldRow  = oldDataArray->at(newRowsIdx);
                     QVector<BenchSubset> newBchSubsets = newBchResults.groupParam(mPlotParams.xType == PlotArgumentType,
@@ -1406,7 +1407,7 @@ void Plotter3DSurface::onReloadClicked()
                     
                     double zFallback = 0.;
                     int newRowsIdx  = 0;
-                    for (const auto& bchZSub : qAsConst(newBchZSubs))
+                    for (const auto& bchZSub : std::as_const(newBchZSubs))
                     {
                         const QString zName = bchZSub.name;
                         double zVal = BenchResults::getParamValue(zName, custZName, custZAxis, zFallback);

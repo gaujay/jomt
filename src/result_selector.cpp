@@ -35,6 +35,8 @@
 #include <QScreen>
 #include <QGuiApplication>
 
+#include <utility>
+
 static const char* config_file = "config_selector.json";
 
 
@@ -341,7 +343,7 @@ void ResultSelector::updateResults(bool clear, const QSet<QString> unselected)
     QList<QTreeWidgetItem *> items;
     
     QVector<BenchSubset> bchFamilies = mBchResults.segmentFamilies();
-    for (const auto &bchFamily : qAsConst(bchFamilies))
+    for (const auto &bchFamily : std::as_const(bchFamilies))
     {
         bool oneTopSelected = false;
         bool allTopSelected = true;
@@ -351,7 +353,7 @@ void ResultSelector::updateResults(bool clear, const QSet<QString> unselected)
         if ( !mBchResults.benchmarks[bchFamily.idxs[0]].container.isEmpty() )
         {
             QVector<BenchSubset> bchContainers = mBchResults.segmentContainers(bchFamily.idxs);
-            for (const auto &bchContainer : qAsConst(bchContainers))
+            for (const auto &bchContainer : std::as_const(bchContainers))
             {
                 bool oneMidSelected = false;
                 bool allMidSelected = true;
@@ -718,7 +720,7 @@ void ResultSelector::updateReloadWatchList()
             mWatcher.removePaths( mWatcher.files() );
         
         mWatcher.addPath(mOrigFilename);
-        for (const auto& addFilename : qAsConst(mAddFilenames))
+        for (const auto& addFilename : std::as_const(mAddFilenames))
             mWatcher.addPath( addFilename.filename );
     }
 }
@@ -730,7 +732,7 @@ void ResultSelector::onCheckAutoReload(int state)
         if (mWatcher.files().empty())
         {
             mWatcher.addPath(mOrigFilename);
-            for (const auto& addFilename : qAsConst(mAddFilenames))
+            for (const auto& addFilename : std::as_const(mAddFilenames))
                 mWatcher.addPath( addFilename.filename );
         }
     }
@@ -763,7 +765,7 @@ void ResultSelector::onReloadClicked()
     }
     
     // Load additionnals
-    for (const auto &addFile : qAsConst(mAddFilenames))
+    for (const auto &addFile : std::as_const(mAddFilenames))
     {
         QString errorMsg;
         BenchResults addResults = ResultParser::parseJsonFile(addFile.filename, errorMsg);
